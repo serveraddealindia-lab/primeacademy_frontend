@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Layout } from '../components/Layout';
 import { batchAPI, Batch } from '../api/batch.api';
 
-const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export const BatchDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();

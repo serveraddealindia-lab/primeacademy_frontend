@@ -40,7 +40,7 @@ export const FacultyManagement: React.FC = () => {
   const updateUserImageMutation = useMutation({
     mutationFn: ({ userId, avatarUrl }: { userId: number; avatarUrl: string }) =>
       userAPI.updateUser(userId, { avatarUrl }),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       // Invalidate and refetch faculty list
       queryClient.invalidateQueries({ queryKey: ['faculty'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });

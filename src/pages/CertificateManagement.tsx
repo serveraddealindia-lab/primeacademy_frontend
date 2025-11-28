@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
-import { certificateAPI, CreateCertificateRequest, Certificate } from '../api/certificate.api';
+import { certificateAPI, CreateCertificateRequest, Certificate, CertificatesResponse } from '../api/certificate.api';
 import { studentAPI } from '../api/student.api';
 import { batchAPI } from '../api/batch.api';
 
@@ -79,24 +79,26 @@ export const CertificateManagement: React.FC = () => {
   });
 
   // Fetch batches (for course suggestions)
-  const { data: batchesData } = useQuery({
+  const { data: _batchesData } = useQuery({
     queryKey: ['batches'],
     queryFn: () => batchAPI.getAllBatches(),
   });
 
   // Fetch certificates
-  const { 
-    data: certificatesData, 
+  const {
+    data: certificatesData,
     isLoading: isLoadingCertificates,
     error: certificatesError 
-  } = useQuery({
+  } = useQuery<CertificatesResponse>({
     queryKey: ['certificates'],
     queryFn: () => certificateAPI.getAllCertificates(),
     retry: 1,
-    onError: (error: any) => {
-      console.error('Error fetching certificates:', error);
-    },
   });
+
+  // Handle errors separately
+  if (certificatesError) {
+    console.error('Error fetching certificates:', certificatesError);
+  }
 
   const createCertificateMutation = useMutation({
     mutationFn: (data: CreateCertificateRequest) => certificateAPI.createCertificate(data),
@@ -289,7 +291,7 @@ export const CertificateManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {certificates.map((certificate) => (
+                    {certificates.map((certificate: Certificate) => (
                       <tr key={certificate.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
                           {certificate.certificateNumber}
@@ -307,14 +309,16 @@ export const CertificateManagement: React.FC = () => {
                           <div className="flex flex-wrap gap-1">
                             {(() => {
                               // Ensure softwareCovered is always an array
-                              const softwareList = Array.isArray(certificate.softwareCovered) 
-                                ? certificate.softwareCovered 
-                                : (typeof certificate.softwareCovered === 'string' 
-                                    ? certificate.softwareCovered.split(',').map(s => s.trim()).filter(s => s)
-                                    : []);
+                              let softwareList: string[] = [];
+                              if (Array.isArray(certificate.softwareCovered)) {
+                                softwareList = certificate.softwareCovered;
+                              } else if (typeof certificate.softwareCovered === 'string') {
+                                const softwareStr: string = certificate.softwareCovered;
+                                softwareList = softwareStr.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                              }
                               return (
                                 <>
-                                  {softwareList.slice(0, 3).map((software, idx) => (
+                                  {softwareList.slice(0, 3).map((software: string, idx: number) => (
                                     <span
                                       key={idx}
                                       className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs"

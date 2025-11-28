@@ -83,6 +83,8 @@ export const BatchManagement: React.FC = () => {
 
   const batches = batchesData?.data || [];
 
+  // Unused function - kept for future use
+  /*
   const handleDownloadBatchCsv = (batch: Batch) => {
     const baseRows = [
       ['Section', 'Field', 'Value'],
@@ -135,6 +137,7 @@ export const BatchManagement: React.FC = () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+  */
 
   const handleView = (batch: Batch) => {
     navigate(`/batches/${batch.id}`);

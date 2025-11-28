@@ -76,7 +76,7 @@ export const StudentManagement: React.FC = () => {
   const updateUserImageMutation = useMutation({
     mutationFn: ({ userId, avatarUrl }: { userId: number; avatarUrl: string }) =>
       userAPI.updateUser(userId, { avatarUrl }),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       // Invalidate and refetch students list
       queryClient.invalidateQueries({ queryKey: ['students'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -714,10 +714,10 @@ export const StudentManagement: React.FC = () => {
                         <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData?.data?.user?.createdAt || selectedStudent?.createdAt || '').toLocaleDateString()}</p>
                       </div>
                     )}
-                    {(studentProfileData?.data?.user?.updatedAt || selectedStudent?.updatedAt) && (
+                    {studentProfileData?.data?.user?.updatedAt && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Last Updated</label>
-                        <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData?.data?.user?.updatedAt || selectedStudent?.updatedAt || '').toLocaleDateString()}</p>
+                        <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData.data.user.updatedAt).toLocaleDateString()}</p>
                       </div>
                     )}
                   </div>
@@ -775,14 +775,17 @@ export const StudentManagement: React.FC = () => {
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Software List</label>
                         {(() => {
-                          const softwareList = studentProfileData?.data?.user?.studentProfile?.softwareList;
+                          const softwareList: unknown = studentProfileData?.data?.user?.studentProfile?.softwareList;
                           // Handle different data types: array, string, or null/undefined
                           let softwareArray: string[] = [];
                           if (Array.isArray(softwareList)) {
-                            softwareArray = softwareList;
-                          } else if (typeof softwareList === 'string' && softwareList.trim()) {
-                            // If it's a string, split by comma
-                            softwareArray = softwareList.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                            softwareArray = softwareList as string[];
+                          } else if (softwareList && typeof softwareList === 'string') {
+                            const trimmed = softwareList.trim();
+                            if (trimmed) {
+                              // If it's a string, split by comma
+                              softwareArray = trimmed.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                            }
                           }
                           
                           return softwareArray.length > 0 ? (
