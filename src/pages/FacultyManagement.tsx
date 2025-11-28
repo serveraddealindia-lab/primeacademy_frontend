@@ -40,8 +40,15 @@ export const FacultyManagement: React.FC = () => {
   const updateUserImageMutation = useMutation({
     mutationFn: ({ userId, avatarUrl }: { userId: number; avatarUrl: string }) =>
       userAPI.updateUser(userId, { avatarUrl }),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Invalidate and refetch faculty list
       queryClient.invalidateQueries({ queryKey: ['faculty'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      // Update the selected faculty's avatarUrl immediately
+      if (selectedFaculty) {
+        setSelectedFaculty({ ...selectedFaculty, avatarUrl: variables.avatarUrl });
+      }
+      setUploadingImage(false);
       setIsImageModalOpen(false);
       setSelectedFaculty(null);
       setImagePreview(null);
@@ -76,16 +83,25 @@ export const FacultyManagement: React.FC = () => {
     setUploadingImage(true);
     try {
       const uploadResponse = await uploadAPI.uploadFile(file);
-      if (uploadResponse.data.files.length > 0) {
+      console.log('Upload response:', uploadResponse);
+      if (uploadResponse.data && uploadResponse.data.files && uploadResponse.data.files.length > 0) {
         const imageUrl = uploadResponse.data.files[0].url;
+        console.log('Uploaded image URL:', imageUrl);
+        // Update preview with the uploaded URL
+        setImagePreview(imageUrl);
+        // Update user with new image URL
         updateUserImageMutation.mutate({
           userId: selectedFaculty.id,
           avatarUrl: imageUrl,
         });
+      } else {
+        throw new Error('No files returned from upload');
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to upload image');
+      console.error('Upload error:', error);
+      alert(error.response?.data?.message || error.message || 'Failed to upload image');
       setUploadingImage(false);
+      setImagePreview(null);
     }
   };
 
@@ -172,9 +188,10 @@ export const FacultyManagement: React.FC = () => {
                         <div className="flex-shrink-0">
                           {facultyMember.avatarUrl ? (
                             <img
-                              src={facultyMember.avatarUrl}
+                              src={`${facultyMember.avatarUrl}?t=${Date.now()}`}
                               alt={facultyMember.name}
                               className="h-16 w-16 rounded-full object-cover border-2 border-orange-200"
+                              key={facultyMember.avatarUrl}
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(facultyMember.name) + '&background=orange&color=fff';
                               }}
@@ -301,6 +318,14 @@ export const FacultyManagement: React.FC = () => {
                     src={imagePreview}
                     alt="Preview"
                     className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    key={imagePreview}
+                  />
+                ) : selectedFaculty?.avatarUrl ? (
+                  <img
+                    src={`${selectedFaculty.avatarUrl}?t=${Date.now()}`}
+                    alt="Current"
+                    className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    key={selectedFaculty.avatarUrl}
                   />
                 ) : (
                   <div className="h-32 w-32 rounded-full bg-gray-200 flex items-center justify-center">

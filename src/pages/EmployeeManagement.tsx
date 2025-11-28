@@ -40,8 +40,15 @@ export const EmployeeManagement: React.FC = () => {
   const updateUserImageMutation = useMutation({
     mutationFn: ({ userId, avatarUrl }: { userId: number; avatarUrl: string }) =>
       userAPI.updateUser(userId, { avatarUrl }),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Invalidate and refetch employees list
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      // Update the selected employee's avatarUrl immediately
+      if (selectedEmployee) {
+        setSelectedEmployee({ ...selectedEmployee, avatarUrl: variables.avatarUrl });
+      }
+      setUploadingImage(false);
       setIsImageModalOpen(false);
       setSelectedEmployee(null);
       setImagePreview(null);
@@ -76,16 +83,25 @@ export const EmployeeManagement: React.FC = () => {
     setUploadingImage(true);
     try {
       const uploadResponse = await uploadAPI.uploadFile(file);
-      if (uploadResponse.data.files.length > 0) {
+      console.log('Upload response:', uploadResponse);
+      if (uploadResponse.data && uploadResponse.data.files && uploadResponse.data.files.length > 0) {
         const imageUrl = uploadResponse.data.files[0].url;
+        console.log('Uploaded image URL:', imageUrl);
+        // Update preview with the uploaded URL
+        setImagePreview(imageUrl);
+        // Update user with new image URL
         updateUserImageMutation.mutate({
           userId: selectedEmployee.id,
           avatarUrl: imageUrl,
         });
+      } else {
+        throw new Error('No files returned from upload');
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to upload image');
+      console.error('Upload error:', error);
+      alert(error.response?.data?.message || error.message || 'Failed to upload image');
       setUploadingImage(false);
+      setImagePreview(null);
     }
   };
 
@@ -187,9 +203,10 @@ export const EmployeeManagement: React.FC = () => {
                           <div className="flex items-center">
                             {employee.avatarUrl ? (
                               <img
-                                src={employee.avatarUrl}
+                                src={`${employee.avatarUrl}?t=${Date.now()}`}
                                 alt={employee.name}
                                 className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                                key={employee.avatarUrl}
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(employee.name) + '&background=orange&color=fff';
                                 }}
@@ -311,6 +328,14 @@ export const EmployeeManagement: React.FC = () => {
                     src={imagePreview}
                     alt="Preview"
                     className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    key={imagePreview}
+                  />
+                ) : selectedEmployee?.avatarUrl ? (
+                  <img
+                    src={`${selectedEmployee.avatarUrl}?t=${Date.now()}`}
+                    alt="Current"
+                    className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    key={selectedEmployee.avatarUrl}
                   />
                 ) : (
                   <div className="h-32 w-32 rounded-full bg-gray-200 flex items-center justify-center">

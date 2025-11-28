@@ -5,6 +5,7 @@ import { Layout } from '../components/Layout';
 import { userAPI, User, UpdateUserRequest, CreateUserRequest } from '../api/user.api';
 import { permissionAPI, Permission, Module, UpdatePermissionRequest } from '../api/permission.api';
 import { roleAPI, Role } from '../api/role.api';
+import { parseRoleFromForm } from '../types/user.types';
 
 export const UserManagement: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -298,7 +299,7 @@ export const UserManagement: React.FC = () => {
       name: formData.get('name') as string || undefined,
       email: formData.get('email') as string || undefined,
       phone: formData.get('phone') as string || undefined,
-      role: formData.get('role') ? (formData.get('role') as User['role']) : undefined,
+      role: parseRoleFromForm(formData.get('role') as string),
       isActive: formData.get('isActive') === 'true',
     };
     updateUserMutation.mutate({ id: selectedUser.id, data });
@@ -313,11 +314,16 @@ export const UserManagement: React.FC = () => {
   const handleCreateUser = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const roleValue = parseRoleFromForm(formData.get('role') as string);
+    if (!roleValue) {
+      alert('Please select a valid role');
+      return;
+    }
     const data: CreateUserRequest = {
       name: formData.get('name') as string,
       email: formData.get('email') as string,
       phone: formData.get('phone') as string || undefined,
-      role: formData.get('role') as CreateUserRequest['role'],
+      role: roleValue,
       password: formData.get('password') as string,
     };
     createUserMutation.mutate(data);

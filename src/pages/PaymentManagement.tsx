@@ -54,6 +54,45 @@ export const PaymentManagement: React.FC = () => {
   const payments = paymentsData?.data.payments || [];
   const students = studentsData?.data.students || [];
 
+  const handleDownloadCSV = () => {
+    const headers = ['Student Name', 'Student Email', 'Student Phone', 'Total Amount', 'Paid Amount', 'Balance', 'Due Date', 'Paid Date', 'Status', 'Payment Method', 'Transaction ID', 'Notes'];
+    
+    const rows = payments.map((payment) => {
+      const paidAmount = (payment.paidAmount !== undefined && payment.paidAmount !== null) ? Number(payment.paidAmount) : 0;
+      const balance = payment.amount - paidAmount;
+      
+      return [
+        payment.student?.name || `Student ${payment.studentId}`,
+        payment.student?.email || '-',
+        payment.student?.phone || '-',
+        payment.amount.toFixed(2),
+        paidAmount.toFixed(2),
+        balance.toFixed(2),
+        payment.dueDate ? new Date(payment.dueDate).toLocaleDateString() : '-',
+        payment.paidDate ? new Date(payment.paidDate).toLocaleDateString() : '-',
+        payment.status,
+        payment.paymentMethod || '-',
+        payment.transactionId || '-',
+        payment.notes || '-',
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `payments_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleCreatePayment = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -61,6 +100,8 @@ export const PaymentManagement: React.FC = () => {
     const studentId = parseInt(formData.get('studentId') as string);
     const amount = parseFloat(formData.get('amount') as string);
     const dueDate = formData.get('dueDate') as string;
+    const paymentMethod = formData.get('paymentMethod') as string | null;
+    const transactionId = formData.get('transactionId') as string | null;
     
     // Validation
     if (!studentId || isNaN(studentId)) {
@@ -81,6 +122,8 @@ export const PaymentManagement: React.FC = () => {
       amount,
       dueDate,
       notes: formData.get('notes') as string || undefined,
+      paymentMethod: paymentMethod || undefined,
+      transactionId: transactionId || undefined,
     };
     
     console.log('Creating payment with data:', data);
@@ -91,12 +134,28 @@ export const PaymentManagement: React.FC = () => {
     e.preventDefault();
     if (!selectedPayment) return;
     const formData = new FormData(e.currentTarget);
+    const paidAmountValue = formData.get('paidAmount')
+      ? parseFloat(formData.get('paidAmount') as string)
+      : undefined;
+    const statusValue = formData.get('status') as 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled' || undefined;
+    
+    // Auto-set status based on paidAmount if status is not explicitly set
+    let finalStatus = statusValue;
+    if (paidAmountValue !== undefined && paidAmountValue !== null && !isNaN(paidAmountValue)) {
+      if (paidAmountValue >= selectedPayment.amount) {
+        finalStatus = 'paid';
+      } else if (paidAmountValue > 0) {
+        finalStatus = 'partial';
+      }
+    }
+    
     const data: UpdatePaymentRequest = {
-      status: formData.get('status') as 'pending' | 'paid' | 'overdue' | 'cancelled' || undefined,
+      status: finalStatus,
       paidDate: formData.get('paidDate') as string || undefined,
       paymentMethod: formData.get('paymentMethod') as string || undefined,
       transactionId: formData.get('transactionId') as string || undefined,
       notes: formData.get('notes') as string || undefined,
+      paidAmount: paidAmountValue,
     };
     updatePaymentMutation.mutate({ id: selectedPayment.id, data });
   };
@@ -123,14 +182,25 @@ export const PaymentManagement: React.FC = () => {
                 <h1 className="text-3xl font-bold text-white">Payment Management</h1>
                 <p className="mt-2 text-orange-100">Manage payments</p>
               </div>
-              {(user?.role === 'admin' || user?.role === 'superadmin') && (
+              <div className="flex gap-3">
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
+                  onClick={handleDownloadCSV}
+                  className="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center gap-2"
                 >
-                  + Create Payment
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Download CSV
                 </button>
-              )}
+                {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
+                  >
+                    + Create Payment
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -159,8 +229,22 @@ export const PaymentManagement: React.FC = () => {
                           <div className="text-sm font-medium text-gray-900">{payment.student?.name || `Student ${payment.studentId}`}</div>
                           <div className="text-sm text-gray-500">{payment.student?.email || '-'}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">₹{payment.amount.toFixed(2)}</div>
+                        <td className="px-6 py-4">
+                          {payment.status === 'partial' || (payment.paidAmount && payment.paidAmount > 0 && payment.paidAmount < payment.amount) ? (
+                            <div className="text-sm space-y-1">
+                              <div className="text-gray-900 font-semibold">Total: ₹{payment.amount.toFixed(2)}</div>
+                              <div className="text-green-600 font-medium">
+                                Paid: ₹{((payment.paidAmount !== undefined && payment.paidAmount !== null) ? Number(payment.paidAmount) : 0).toFixed(2)}
+                              </div>
+                              <div className="text-red-600 font-medium">
+                                Balance: ₹{(payment.amount - ((payment.paidAmount !== undefined && payment.paidAmount !== null) ? Number(payment.paidAmount) : 0)).toFixed(2)}
+                              </div>
+                            </div>
+                          ) : payment.status === 'paid' ? (
+                            <div className="text-sm text-gray-900 font-semibold">₹{payment.amount.toFixed(2)}</div>
+                          ) : (
+                            <div className="text-sm text-gray-900">₹{payment.amount.toFixed(2)}</div>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-500">
@@ -174,10 +258,15 @@ export const PaymentManagement: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                            payment.status === 'paid' ? 'bg-green-100 text-green-800' :
-                            payment.status === 'overdue' ? 'bg-red-100 text-red-800' :
-                            payment.status === 'cancelled' ? 'bg-gray-100 text-gray-800' :
-                            'bg-yellow-100 text-yellow-800'
+                            payment.status === 'paid'
+                              ? 'bg-green-100 text-green-800'
+                              : payment.status === 'partial'
+                              ? 'bg-blue-100 text-blue-800'
+                              : payment.status === 'overdue'
+                              ? 'bg-red-100 text-red-800'
+                              : payment.status === 'cancelled'
+                              ? 'bg-gray-100 text-gray-800'
+                              : 'bg-yellow-100 text-yellow-800'
                           }`}>
                             {payment.status}
                           </span>
@@ -254,6 +343,30 @@ export const PaymentManagement: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                <select
+                  name="paymentMethod"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  defaultValue=""
+                >
+                  <option value="">Select method</option>
+                  <option value="cash">Cash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="emi">EMI</option>
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Transaction ID</label>
+                <input
+                  type="text"
+                  name="transactionId"
+                  placeholder="Optional transaction reference"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
               <div className="flex gap-3">
                 <button
                   type="submit"
@@ -289,6 +402,7 @@ export const PaymentManagement: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                 >
                   <option value="pending">Pending</option>
+                  <option value="partial">Partial</option>
                   <option value="paid">Paid</option>
                   <option value="overdue">Overdue</option>
                   <option value="cancelled">Cancelled</option>
@@ -304,6 +418,22 @@ export const PaymentManagement: React.FC = () => {
                 />
               </div>
               <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Paid Amount</label>
+                <input
+                  type="number"
+                  name="paidAmount"
+                  step="0.01"
+                  min="0"
+                  defaultValue={
+                    selectedPayment.paidAmount !== undefined
+                      ? Number(selectedPayment.paidAmount).toString()
+                      : ''
+                  }
+                  placeholder="Enter collected amount"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+              </div>
+              <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
                 <select
                   name="paymentMethod"
@@ -315,6 +445,7 @@ export const PaymentManagement: React.FC = () => {
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="upi">UPI</option>
                   <option value="card">Card</option>
+                  <option value="emi">EMI</option>
                 </select>
               </div>
               <div className="mb-4">

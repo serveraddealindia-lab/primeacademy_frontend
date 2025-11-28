@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# production build
+dist/
+build/
+
+# environment files
+.env
+.env.local
+.env.*.local
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# misc
+.DS_Store
+
+# certificates directory (generated PDFs)
+backend/certificates/
+
+# uploaded files
+backend/uploads/
+frontend/dist.zip
+
+# database dumps
+*.sql
+!backend/create_database_tables.sql
+!backend/fix_image_upload_columns.sql
+!backend/fix_image_upload_columns_simple.sql
+!backend/update_payment_transactions.sql
+
+# temporary files
+frontend/..prev_*

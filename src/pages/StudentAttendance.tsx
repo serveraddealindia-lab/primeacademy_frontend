@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +20,7 @@ export const StudentAttendance: React.FC = () => {
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [fingerprintData, setFingerprintData] = useState<string | null>(null);
   const [location, setLocation] = useState<{ latitude?: number; longitude?: number; address?: string } | null>(null);
+  const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,6 +43,7 @@ export const StudentAttendance: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['today-punch'] });
       queryClient.invalidateQueries({ queryKey: ['punch-history'] });
       setCapturedPhoto(null);
+      setCapturedFile(null);
       setFingerprintData(null);
       alert('Punched in successfully!');
     },
@@ -56,6 +58,7 @@ export const StudentAttendance: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['today-punch'] });
       queryClient.invalidateQueries({ queryKey: ['punch-history'] });
       setCapturedPhoto(null);
+      setCapturedFile(null);
       setFingerprintData(null);
       alert('Punched out successfully!');
     },
@@ -66,36 +69,36 @@ export const StudentAttendance: React.FC = () => {
 
   // Get user location
   const getLocation = useCallback(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-          // Optionally get address from coordinates
-          fetch(`https://api.opencagedata.com/geocode/v1/json?q=${position.coords.latitude}+${position.coords.longitude}&key=YOUR_API_KEY`)
-            .then(res => res.json())
-            .then(data => {
-              if (data.results && data.results.length > 0) {
-                setLocation(prev => ({
-                  ...prev,
-                  address: data.results[0].formatted,
-                }));
-              }
-            })
-            .catch(() => {
-              // If geocoding fails, just use coordinates
-            });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          setLocation({ address: 'Location access denied' });
-        }
-      );
-    } else {
+    if (!navigator.geolocation) {
       setLocation({ address: 'Geolocation not supported' });
+      return;
     }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        setLocation({ address: 'Location access denied' });
+      }
+    );
+  }, []);
+
+  const dataUrlToFile = useCallback((dataUrl: string, filename: string): File => {
+    const arr = dataUrl.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
   }, []);
 
   // Start webcam
@@ -142,9 +145,10 @@ export const StudentAttendance: React.FC = () => {
         context.drawImage(video, 0, 0);
         const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
         setCapturedPhoto(photoDataUrl);
+        setCapturedFile(dataUrlToFile(photoDataUrl, `attendance-${Date.now()}.jpg`));
       }
     }
-  }, []);
+  }, [dataUrlToFile]);
 
   // Capture fingerprint (simulated - in production, use actual fingerprint scanner)
   const captureFingerprint = useCallback(async () => {
@@ -156,38 +160,66 @@ export const StudentAttendance: React.FC = () => {
   }, []);
 
   // Handle punch in
-  const handlePunchIn = useCallback(() => {
-    if (!capturedPhoto) {
-      alert('Please capture your photo first');
-      return;
+  const handlePunchIn = useCallback(async () => {
+    // Try to get location if not already captured
+    let currentLocation = location;
+    if (!currentLocation) {
+      try {
+        if (navigator.geolocation) {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          currentLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+        }
+      } catch (error) {
+        console.log('Location not available:', error);
+      }
     }
 
     const data: PunchInRequest = {
-      photo: capturedPhoto,
+      photo: capturedPhoto || undefined,
+      photoFile: capturedFile || undefined,
       fingerprint: fingerprintData || undefined,
-      location: location || undefined,
+      location: currentLocation || undefined,
     };
 
     punchInMutation.mutate(data);
     stopWebcam();
-  }, [capturedPhoto, fingerprintData, location, punchInMutation, stopWebcam]);
+  }, [capturedPhoto, capturedFile, fingerprintData, location, punchInMutation, stopWebcam]);
 
   // Handle punch out
-  const handlePunchOut = useCallback(() => {
-    if (!capturedPhoto) {
-      alert('Please capture your photo first');
-      return;
+  const handlePunchOut = useCallback(async () => {
+    // Try to get location if not already captured
+    let currentLocation = location;
+    if (!currentLocation) {
+      try {
+        if (navigator.geolocation) {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          currentLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+        }
+      } catch (error) {
+        console.log('Location not available:', error);
+      }
     }
 
     const data: PunchOutRequest = {
-      photo: capturedPhoto,
+      photo: capturedPhoto || undefined,
+      photoFile: capturedFile || undefined,
       fingerprint: fingerprintData || undefined,
-      location: location || undefined,
+      location: currentLocation || undefined,
     };
 
     punchOutMutation.mutate(data);
     stopWebcam();
-  }, [capturedPhoto, fingerprintData, location, punchOutMutation, stopWebcam]);
+  }, [capturedPhoto, capturedFile, fingerprintData, location, punchOutMutation, stopWebcam]);
 
   // Cleanup on unmount
   React.useEffect(() => {
@@ -209,10 +241,36 @@ export const StudentAttendance: React.FC = () => {
     );
   }
 
-  const todayPunch = todayPunchData?.data.punch;
+  const uploadsBaseUrl = useMemo(() => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+    return apiBase.replace(/\/api\/?$/, '/').replace(/\/+$/, '') || '';
+  }, []);
+
+  const resolvePhotoUrl = useCallback(
+    (path?: string | null): string | null => {
+      if (!path) return null;
+      if (path.startsWith('http')) return path;
+      const cleanedPath = path.startsWith('/') ? path.slice(1) : path;
+      return `${uploadsBaseUrl}/${cleanedPath}`;
+    },
+    [uploadsBaseUrl]
+  );
+
+  const todayPunch = todayPunchData?.data.punch
+    ? {
+        ...todayPunchData.data.punch,
+        punchInPhoto: resolvePhotoUrl(todayPunchData.data.punch.punchInPhoto),
+        punchOutPhoto: resolvePhotoUrl(todayPunchData.data.punch.punchOutPhoto),
+      }
+    : null;
   const hasPunchedIn = todayPunchData?.data.hasPunchedIn || false;
   const hasPunchedOut = todayPunchData?.data.hasPunchedOut || false;
-  const punches = punchHistoryData?.data.punches || [];
+  const punches =
+    punchHistoryData?.data.punches.map((punch) => ({
+      ...punch,
+      punchInPhoto: resolvePhotoUrl(punch.punchInPhoto),
+      punchOutPhoto: resolvePhotoUrl(punch.punchOutPhoto),
+    })) || [];
 
   return (
     <Layout>
@@ -221,7 +279,7 @@ export const StudentAttendance: React.FC = () => {
           <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
             <div>
               <h1 className="text-3xl font-bold text-white">My Attendance</h1>
-              <p className="mt-2 text-orange-100">Punch in and punch out with photo and fingerprint</p>
+              <p className="mt-2 text-orange-100">Punch in and punch out (photo and fingerprint are optional)</p>
             </div>
           </div>
 
@@ -250,7 +308,7 @@ export const StudentAttendance: React.FC = () => {
                   <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                     <p className="text-sm text-gray-600">Working Hours</p>
                     <p className="text-lg font-semibold text-orange-700">
-                      {todayPunch.effectiveHours ? `${todayPunch.effectiveHours.toFixed(2)} hrs` : '-'}
+                      {todayPunch.effectiveWorkingHours ? `${todayPunch.effectiveWorkingHours.toFixed(2)} hrs` : '-'}
                     </p>
                   </div>
                 </div>
@@ -263,7 +321,7 @@ export const StudentAttendance: React.FC = () => {
 
             {/* Photo Capture Section */}
             <div className="mb-6">
-              <h2 className="text-xl font-bold mb-4">Capture Photo</h2>
+              <h2 className="text-xl font-bold mb-4">Capture Photo (Optional)</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Webcam View */}
                 <div className="space-y-4">
@@ -337,7 +395,10 @@ export const StudentAttendance: React.FC = () => {
                   </div>
                   {capturedPhoto && (
                     <button
-                      onClick={() => setCapturedPhoto(null)}
+                      onClick={() => {
+                        setCapturedPhoto(null);
+                        setCapturedFile(null);
+                      }}
                       className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
                     >
                       Clear Photo
@@ -349,7 +410,7 @@ export const StudentAttendance: React.FC = () => {
 
             {/* Fingerprint Section */}
             <div className="mb-6">
-              <h2 className="text-xl font-bold mb-4">Fingerprint Authentication</h2>
+              <h2 className="text-xl font-bold mb-4">Fingerprint Authentication (Optional)</h2>
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
@@ -389,14 +450,14 @@ export const StudentAttendance: React.FC = () => {
               <div className="flex gap-4">
                 <button
                   onClick={handlePunchIn}
-                  disabled={hasPunchedIn || punchInMutation.isPending || !capturedPhoto}
+                  disabled={hasPunchedIn || punchInMutation.isPending}
                   className="flex-1 px-6 py-4 bg-green-600 text-white rounded-lg font-semibold text-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {punchInMutation.isPending ? 'Punching In...' : hasPunchedIn ? '✓ Already Punched In' : '🟢 Punch In'}
                 </button>
                 <button
                   onClick={handlePunchOut}
-                  disabled={!hasPunchedIn || hasPunchedOut || punchOutMutation.isPending || !capturedPhoto}
+                  disabled={!hasPunchedIn || hasPunchedOut || punchOutMutation.isPending}
                   className="flex-1 px-6 py-4 bg-red-600 text-white rounded-lg font-semibold text-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {punchOutMutation.isPending ? 'Punching Out...' : hasPunchedOut ? '✓ Already Punched Out' : '🔴 Punch Out'}
@@ -436,7 +497,7 @@ export const StudentAttendance: React.FC = () => {
                             {punch.punchOutAt ? new Date(punch.punchOutAt).toLocaleTimeString() : '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {punch.effectiveHours ? `${punch.effectiveHours.toFixed(2)} hrs` : '-'}
+                            {punch.effectiveWorkingHours ? `${punch.effectiveWorkingHours.toFixed(2)} hrs` : '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex gap-2">
@@ -445,7 +506,7 @@ export const StudentAttendance: React.FC = () => {
                                   src={punch.punchInPhoto}
                                   alt="Punch In"
                                   className="w-12 h-12 rounded object-cover cursor-pointer hover:scale-150 transition-transform"
-                                  onClick={() => window.open(punch.punchInPhoto, '_blank')}
+                                  onClick={() => punch.punchInPhoto && window.open(punch.punchInPhoto, '_blank')}
                                 />
                               )}
                               {punch.punchOutPhoto && (
@@ -453,7 +514,7 @@ export const StudentAttendance: React.FC = () => {
                                   src={punch.punchOutPhoto}
                                   alt="Punch Out"
                                   className="w-12 h-12 rounded object-cover cursor-pointer hover:scale-150 transition-transform"
-                                  onClick={() => window.open(punch.punchOutPhoto, '_blank')}
+                                  onClick={() => punch.punchOutPhoto && window.open(punch.punchOutPhoto, '_blank')}
                                 />
                               )}
                             </div>

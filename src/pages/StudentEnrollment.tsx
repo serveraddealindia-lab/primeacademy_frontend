@@ -14,6 +14,16 @@ export const StudentEnrollment: React.FC = () => {
   const [otherSoftware, setOtherSoftware] = useState('');
   const [selectedSoftwares, setSelectedSoftwares] = useState<string[]>([]);
   const [suggestedBatches, setSuggestedBatches] = useState<Batch[]>([]);
+  
+  // Form data state to preserve values across steps
+  const [formData, setFormData] = useState<Partial<CompleteEnrollmentRequest>>({
+    dateOfAdmission: new Date().toISOString().split('T')[0],
+  });
+  
+  // Update form data when input changes
+  const handleInputChange = (field: keyof CompleteEnrollmentRequest, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
 
   // Fetch batches for enrollment
   const { data: batchesData } = useQuery({
@@ -30,7 +40,10 @@ export const StudentEnrollment: React.FC = () => {
       navigate('/students');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.message || 'Failed to enroll student. Please check all required fields.');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to enroll student. Please check all required fields.';
+      console.error('Enrollment error:', error);
+      console.error('Error response:', error.response?.data);
+      alert(errorMessage);
     },
   });
 
@@ -75,11 +88,22 @@ export const StudentEnrollment: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
     
-    // Get all selected software checkboxes
-    const selectedSoftwares = formData.getAll('softwaresIncluded') as string[];
-    let softwaresList = selectedSoftwares.filter(s => s !== 'Other');
+    // Validation - check required fields
+    if (!formData.studentName || !formData.studentName.trim()) {
+      alert('Student Name is required');
+      setCurrentStep(1);
+      return;
+    }
+    
+    if (!formData.phone || !formData.phone.trim()) {
+      alert('Phone number is required');
+      setCurrentStep(1);
+      return;
+    }
+    
+    // Get all selected software checkboxes from state
+    let softwaresList = [...selectedSoftwares];
     
     // Add other software if specified
     if (showOtherSoftwareInput && otherSoftware.trim()) {
@@ -88,50 +112,53 @@ export const StudentEnrollment: React.FC = () => {
     
     const softwaresIncluded = softwaresList.length > 0 ? softwaresList.join(', ') : undefined;
     
+    // Combine form data with software list, ensuring required fields are present
     const data: CompleteEnrollmentRequest = {
-      // Basic Information
-      studentName: formData.get('studentName') as string,
-      email: formData.get('email') as string,
-      phone: formData.get('phone') as string,
-      whatsappNumber: formData.get('whatsappNumber') as string || undefined,
-      dateOfAdmission: formData.get('dateOfAdmission') as string,
-      
-      // Address
-      localAddress: formData.get('localAddress') as string || undefined,
-      permanentAddress: formData.get('permanentAddress') as string || undefined,
-      
-      // Emergency Contact
-      emergencyContactNumber: formData.get('emergencyContactNumber') as string || undefined,
-      emergencyName: formData.get('emergencyName') as string || undefined,
-      emergencyRelation: formData.get('emergencyRelation') as string || undefined,
-      
-      // Course Details
-      courseName: formData.get('courseName') as string || undefined,
-      batchId: formData.get('batchId') ? parseInt(formData.get('batchId') as string) : undefined,
+      studentName: formData.studentName.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email?.trim() || undefined,
+      whatsappNumber: formData.whatsappNumber?.trim() || undefined,
+      dateOfAdmission: formData.dateOfAdmission || undefined,
+      localAddress: formData.localAddress?.trim() || undefined,
+      permanentAddress: formData.permanentAddress?.trim() || undefined,
+      emergencyContactNumber: formData.emergencyContactNumber?.trim() || undefined,
+      emergencyName: formData.emergencyName?.trim() || undefined,
+      emergencyRelation: formData.emergencyRelation?.trim() || undefined,
+      courseName: formData.courseName?.trim() || undefined,
+      batchId: formData.batchId || undefined,
       softwaresIncluded: softwaresIncluded,
-      
-      // Financial Details
-      totalDeal: formData.get('totalDeal') ? parseFloat(formData.get('totalDeal') as string) : undefined,
-      bookingAmount: formData.get('bookingAmount') ? parseFloat(formData.get('bookingAmount') as string) : undefined,
-      balanceAmount: formData.get('balanceAmount') ? parseFloat(formData.get('balanceAmount') as string) : undefined,
-      emiPlan: formData.get('emiPlan') === 'yes',
-      emiPlanDate: formData.get('emiPlanDate') as string || undefined,
-      
-      // Additional Information
-      complimentarySoftware: formData.get('complimentarySoftware') as string || undefined,
-      complimentaryGift: formData.get('complimentaryGift') as string || undefined,
-      hasReference: formData.get('hasReference') === 'yes',
-      referenceDetails: formData.get('referenceDetails') as string || undefined,
-      counselorName: formData.get('counselorName') as string || undefined,
-      leadSource: formData.get('leadSource') as string || undefined,
-      walkinDate: formData.get('walkinDate') as string || undefined,
-      masterFaculty: formData.get('masterFaculty') as string || undefined,
+      totalDeal: formData.totalDeal || undefined,
+      bookingAmount: formData.bookingAmount || undefined,
+      balanceAmount: formData.balanceAmount || undefined,
+      emiPlan: formData.emiPlan || false,
+      emiPlanDate: formData.emiPlanDate || undefined,
+      complimentarySoftware: formData.complimentarySoftware?.trim() || undefined,
+      complimentaryGift: formData.complimentaryGift?.trim() || undefined,
+      hasReference: formData.hasReference || false,
+      referenceDetails: formData.referenceDetails?.trim() || undefined,
+      counselorName: formData.counselorName?.trim() || undefined,
+      leadSource: formData.leadSource || undefined,
+      walkinDate: formData.walkinDate || undefined,
+      masterFaculty: formData.masterFaculty?.trim() || undefined,
     };
 
+    console.log('Submitting enrollment data:', data);
     enrollmentMutation.mutate(data);
   };
 
   const nextStep = () => {
+    // Validate required fields on step 1 before proceeding
+    if (currentStep === 1) {
+      if (!formData.studentName || !formData.studentName.trim()) {
+        alert('Student Name is required');
+        return;
+      }
+      if (!formData.phone || !formData.phone.trim()) {
+        alert('Phone number is required');
+        return;
+      }
+    }
+    
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
     }
@@ -206,18 +233,21 @@ export const StudentEnrollment: React.FC = () => {
                         type="text"
                         name="studentName"
                         required
+                        value={formData.studentName || ''}
+                        onChange={(e) => handleInputChange('studentName', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email <span className="text-red-500">*</span>
+                        Email
                       </label>
                       <input
                         type="email"
                         name="email"
-                        required
+                        value={formData.email || ''}
+                        onChange={(e) => handleInputChange('email', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -230,6 +260,8 @@ export const StudentEnrollment: React.FC = () => {
                         type="tel"
                         name="phone"
                         required
+                        value={formData.phone || ''}
+                        onChange={(e) => handleInputChange('phone', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -241,19 +273,21 @@ export const StudentEnrollment: React.FC = () => {
                       <input
                         type="tel"
                         name="whatsappNumber"
+                        value={formData.whatsappNumber || ''}
+                        onChange={(e) => handleInputChange('whatsappNumber', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Date of Admission <span className="text-red-500">*</span>
+                        Date of Admission
                       </label>
                       <input
                         type="date"
                         name="dateOfAdmission"
-                        required
-                        defaultValue={new Date().toISOString().split('T')[0]}
+                        value={formData.dateOfAdmission || new Date().toISOString().split('T')[0]}
+                        onChange={(e) => handleInputChange('dateOfAdmission', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -274,6 +308,8 @@ export const StudentEnrollment: React.FC = () => {
                       <textarea
                         name="localAddress"
                         rows={3}
+                        value={formData.localAddress || ''}
+                        onChange={(e) => handleInputChange('localAddress', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -285,6 +321,8 @@ export const StudentEnrollment: React.FC = () => {
                       <textarea
                         name="permanentAddress"
                         rows={3}
+                        value={formData.permanentAddress || ''}
+                        onChange={(e) => handleInputChange('permanentAddress', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -297,6 +335,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="tel"
                           name="emergencyContactNumber"
+                          value={formData.emergencyContactNumber || ''}
+                          onChange={(e) => handleInputChange('emergencyContactNumber', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -308,6 +348,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="text"
                           name="emergencyName"
+                          value={formData.emergencyName || ''}
+                          onChange={(e) => handleInputChange('emergencyName', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -320,6 +362,8 @@ export const StudentEnrollment: React.FC = () => {
                           type="text"
                           name="emergencyRelation"
                           placeholder="e.g., Father, Mother, Guardian"
+                          value={formData.emergencyRelation || ''}
+                          onChange={(e) => handleInputChange('emergencyRelation', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -341,6 +385,8 @@ export const StudentEnrollment: React.FC = () => {
                       <input
                         type="text"
                         name="courseName"
+                        value={formData.courseName || ''}
+                        onChange={(e) => handleInputChange('courseName', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -361,10 +407,7 @@ export const StudentEnrollment: React.FC = () => {
                               <div
                                 key={batch.id}
                                 className="p-2 bg-white border border-blue-300 rounded hover:bg-blue-50 cursor-pointer"
-                                onClick={() => {
-                                  const select = document.querySelector(`select[name="batchId"]`) as HTMLSelectElement;
-                                  if (select) select.value = batch.id.toString();
-                                }}
+                                onClick={() => handleInputChange('batchId', batch.id)}
                               >
                                 <div className="flex justify-between items-center">
                                   <div>
@@ -388,6 +431,8 @@ export const StudentEnrollment: React.FC = () => {
                       
                       <select
                         name="batchId"
+                        value={formData.batchId?.toString() || ''}
+                        onChange={(e) => handleInputChange('batchId', e.target.value ? parseInt(e.target.value) : undefined)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       >
                         <option value="">Select a batch (optional)</option>
@@ -464,6 +509,7 @@ export const StudentEnrollment: React.FC = () => {
                                 type="checkbox"
                                 name="softwaresIncluded"
                                 value={software}
+                                checked={software === 'Other' ? showOtherSoftwareInput : selectedSoftwares.includes(software)}
                                 onChange={(e) => {
                                   if (software === 'Other') {
                                     setShowOtherSoftwareInput(e.target.checked);
@@ -514,6 +560,8 @@ export const StudentEnrollment: React.FC = () => {
                           type="number"
                           name="totalDeal"
                           step="0.01"
+                          value={formData.totalDeal || ''}
+                          onChange={(e) => handleInputChange('totalDeal', e.target.value ? parseFloat(e.target.value) : undefined)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -526,6 +574,8 @@ export const StudentEnrollment: React.FC = () => {
                           type="number"
                           name="bookingAmount"
                           step="0.01"
+                          value={formData.bookingAmount || ''}
+                          onChange={(e) => handleInputChange('bookingAmount', e.target.value ? parseFloat(e.target.value) : undefined)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -538,6 +588,8 @@ export const StudentEnrollment: React.FC = () => {
                           type="number"
                           name="balanceAmount"
                           step="0.01"
+                          value={formData.balanceAmount || ''}
+                          onChange={(e) => handleInputChange('balanceAmount', e.target.value ? parseFloat(e.target.value) : undefined)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -550,6 +602,8 @@ export const StudentEnrollment: React.FC = () => {
                         </label>
                         <select
                           name="emiPlan"
+                          value={formData.emiPlan ? 'yes' : 'no'}
+                          onChange={(e) => handleInputChange('emiPlan', e.target.value === 'yes')}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         >
                           <option value="no">No</option>
@@ -564,6 +618,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="date"
                           name="emiPlanDate"
+                          value={formData.emiPlanDate || ''}
+                          onChange={(e) => handleInputChange('emiPlanDate', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -586,6 +642,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="text"
                           name="complimentarySoftware"
+                          value={formData.complimentarySoftware || ''}
+                          onChange={(e) => handleInputChange('complimentarySoftware', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -597,6 +655,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="text"
                           name="complimentaryGift"
+                          value={formData.complimentaryGift || ''}
+                          onChange={(e) => handleInputChange('complimentaryGift', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -608,6 +668,8 @@ export const StudentEnrollment: React.FC = () => {
                       </label>
                       <select
                         name="hasReference"
+                        value={formData.hasReference ? 'yes' : 'no'}
+                        onChange={(e) => handleInputChange('hasReference', e.target.value === 'yes')}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       >
                         <option value="no">No</option>
@@ -622,6 +684,8 @@ export const StudentEnrollment: React.FC = () => {
                       <textarea
                         name="referenceDetails"
                         rows={3}
+                        value={formData.referenceDetails || ''}
+                        onChange={(e) => handleInputChange('referenceDetails', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -634,6 +698,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="text"
                           name="counselorName"
+                          value={formData.counselorName || ''}
+                          onChange={(e) => handleInputChange('counselorName', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -644,6 +710,8 @@ export const StudentEnrollment: React.FC = () => {
                         </label>
                         <select
                           name="leadSource"
+                          value={formData.leadSource || ''}
+                          onChange={(e) => handleInputChange('leadSource', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         >
                           <option value="">Select lead source</option>
@@ -665,6 +733,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="date"
                           name="walkinDate"
+                          value={formData.walkinDate || ''}
+                          onChange={(e) => handleInputChange('walkinDate', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -676,6 +746,8 @@ export const StudentEnrollment: React.FC = () => {
                         <input
                           type="text"
                           name="masterFaculty"
+                          value={formData.masterFaculty || ''}
+                          onChange={(e) => handleInputChange('masterFaculty', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>

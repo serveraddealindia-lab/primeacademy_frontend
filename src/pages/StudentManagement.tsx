@@ -37,10 +37,20 @@ export const StudentManagement: React.FC = () => {
   });
 
   // Fetch full student data with profile for view modal
-  const { data: studentProfileData, isLoading: isLoadingProfile } = useQuery({
+  const { data: studentProfileData, isLoading: isLoadingProfile, error: profileError } = useQuery({
     queryKey: ['student-profile', selectedStudent?.id],
-    queryFn: () => userAPI.getUser(selectedStudent!.id),
+    queryFn: async () => {
+      try {
+        const response = await userAPI.getUser(selectedStudent!.id);
+        console.log('Student profile data:', response);
+        return response;
+      } catch (error) {
+        console.error('Error fetching student profile:', error);
+        throw error;
+      }
+    },
     enabled: !!selectedStudent && isViewModalOpen,
+    retry: 1,
   });
 
   // Fetch software completions for selected student
@@ -66,8 +76,15 @@ export const StudentManagement: React.FC = () => {
   const updateUserImageMutation = useMutation({
     mutationFn: ({ userId, avatarUrl }: { userId: number; avatarUrl: string }) =>
       userAPI.updateUser(userId, { avatarUrl }),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Invalidate and refetch students list
       queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      // Update the selected student's avatarUrl immediately
+      if (selectedStudent) {
+        setSelectedStudent({ ...selectedStudent, avatarUrl: variables.avatarUrl });
+      }
+      setUploadingImage(false);
       setIsImageModalOpen(false);
       setSelectedStudent(null);
       setImagePreview(null);
@@ -171,7 +188,7 @@ export const StudentManagement: React.FC = () => {
       return;
     }
 
-    // Show preview
+    // Show preview immediately using FileReader
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result as string);
@@ -182,16 +199,25 @@ export const StudentManagement: React.FC = () => {
     setUploadingImage(true);
     try {
       const uploadResponse = await uploadAPI.uploadFile(file);
-      if (uploadResponse.data.files.length > 0) {
+      console.log('Upload response:', uploadResponse);
+      if (uploadResponse.data && uploadResponse.data.files && uploadResponse.data.files.length > 0) {
         const imageUrl = uploadResponse.data.files[0].url;
+        console.log('Uploaded image URL:', imageUrl);
+        // Update preview with the uploaded URL
+        setImagePreview(imageUrl);
+        // Update user with new image URL
         updateUserImageMutation.mutate({
           userId: selectedStudent.id,
           avatarUrl: imageUrl,
         });
+      } else {
+        throw new Error('No files returned from upload');
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to upload image');
+      console.error('Upload error:', error);
+      alert(error.response?.data?.message || error.message || 'Failed to upload image');
       setUploadingImage(false);
+      setImagePreview(null);
     }
   };
 
@@ -462,12 +488,6 @@ export const StudentManagement: React.FC = () => {
                   <option value="cancelled">Cancelled</option>
                 </select>
               </div>
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p className="text-sm text-yellow-800">
-                  <strong>Note:</strong> This enrollment form requires a backend endpoint at <code className="bg-yellow-100 px-1 rounded">POST /api/enrollments</code>. 
-                  If the endpoint doesn't exist, you may need to create it in the backend.
-                </p>
-              </div>
               <div className="flex gap-3">
                 <button
                   type="submit"
@@ -504,6 +524,14 @@ export const StudentManagement: React.FC = () => {
                     src={imagePreview}
                     alt="Preview"
                     className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    key={imagePreview}
+                  />
+                ) : selectedStudent?.avatarUrl ? (
+                  <img
+                    src={`${selectedStudent.avatarUrl}?t=${Date.now()}`}
+                    alt="Current"
+                    className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    key={selectedStudent.avatarUrl}
                   />
                 ) : (
                   <div className="h-32 w-32 rounded-full bg-gray-200 flex items-center justify-center">
@@ -563,15 +591,69 @@ export const StudentManagement: React.FC = () => {
               <div className="flex justify-center items-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
               </div>
+            ) : profileError ? (
+              <div className="space-y-6">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                  <p className="text-yellow-800 text-sm">
+                    Could not load full profile. Showing basic information.
+                  </p>
+                </div>
+                {/* Show basic info from selectedStudent */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">Basic Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Name</label>
+                      <p className="mt-1 text-sm text-gray-900 font-medium">{selectedStudent?.name || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Email</label>
+                      <p className="mt-1 text-sm text-gray-900">{selectedStudent?.email || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Phone</label>
+                      <p className="mt-1 text-sm text-gray-900">{selectedStudent?.phone || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : !studentProfileData && !isLoadingProfile ? (
+              <div className="space-y-6">
+                {/* Show basic info from selectedStudent if API didn't return data */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">Basic Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Name</label>
+                      <p className="mt-1 text-sm text-gray-900 font-medium">{selectedStudent?.name || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Email</label>
+                      <p className="mt-1 text-sm text-gray-900">{selectedStudent?.email || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Phone</label>
+                      <p className="mt-1 text-sm text-gray-900">{selectedStudent?.phone || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">Profile Details</h3>
+                  <div className="text-center py-8 bg-gray-50 rounded-lg">
+                    <p className="text-gray-500">No student profile information available.</p>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="space-y-6">
                 {/* Student Photo - Prominently Displayed */}
                 <div className="flex justify-center mb-6">
                   {(() => {
-                    const photoUrl = studentProfileData?.data.user.studentProfile?.photoUrl || 
-                                    studentProfileData?.data.user.avatarUrl || 
-                                    selectedStudent.avatarUrl;
-                    const studentName = studentProfileData?.data.user.name || selectedStudent.name;
+                    const userData = studentProfileData?.data?.user || null;
+                    const photoUrl = userData?.studentProfile?.photoUrl || 
+                                    userData?.avatarUrl || 
+                                    selectedStudent?.avatarUrl;
+                    const studentName = userData?.name || selectedStudent?.name || 'Student';
                     
                     if (photoUrl) {
                       return (
@@ -606,36 +688,36 @@ export const StudentManagement: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Name</label>
-                      <p className="mt-1 text-sm text-gray-900 font-medium">{studentProfileData?.data.user.name || selectedStudent.name}</p>
+                      <p className="mt-1 text-sm text-gray-900 font-medium">{studentProfileData?.data?.user?.name || selectedStudent?.name || '-'}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Email</label>
-                      <p className="mt-1 text-sm text-gray-900">{studentProfileData?.data.user.email || selectedStudent.email}</p>
+                      <p className="mt-1 text-sm text-gray-900">{studentProfileData?.data?.user?.email || selectedStudent?.email || '-'}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Phone</label>
-                      <p className="mt-1 text-sm text-gray-900">{studentProfileData?.data.user.phone || selectedStudent.phone || '-'}</p>
+                      <p className="mt-1 text-sm text-gray-900">{studentProfileData?.data?.user?.phone || selectedStudent?.phone || '-'}</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Status</label>
                       <p className="mt-1">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          studentProfileData?.data.user.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          (studentProfileData?.data?.user?.isActive ?? selectedStudent) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {studentProfileData?.data.user.isActive ? 'Active' : 'Inactive'}
+                          {(studentProfileData?.data?.user?.isActive ?? true) ? 'Active' : 'Inactive'}
                         </span>
                       </p>
                     </div>
-                    {studentProfileData?.data.user.createdAt && (
+                    {(studentProfileData?.data?.user?.createdAt || selectedStudent?.createdAt) && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Joined Date</label>
-                        <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData.data.user.createdAt).toLocaleDateString()}</p>
+                        <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData?.data?.user?.createdAt || selectedStudent?.createdAt || '').toLocaleDateString()}</p>
                       </div>
                     )}
-                    {studentProfileData?.data.user.updatedAt && (
+                    {(studentProfileData?.data?.user?.updatedAt || selectedStudent?.updatedAt) && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Last Updated</label>
-                        <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData.data.user.updatedAt).toLocaleDateString()}</p>
+                        <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData?.data?.user?.updatedAt || selectedStudent?.updatedAt || '').toLocaleDateString()}</p>
                       </div>
                     )}
                   </div>
@@ -644,12 +726,12 @@ export const StudentManagement: React.FC = () => {
                 {/* Student Profile Information */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">Profile Details</h3>
-                  {studentProfileData?.data.user.studentProfile ? (
+                  {studentProfileData?.data?.user?.studentProfile ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Date of Birth</label>
                         <p className="mt-1 text-sm text-gray-900">
-                          {studentProfileData.data.user.studentProfile.dob 
+                          {studentProfileData.data?.user?.studentProfile?.dob 
                             ? new Date(studentProfileData.data.user.studentProfile.dob).toLocaleDateString() 
                             : '-'}
                         </p>
@@ -657,7 +739,7 @@ export const StudentManagement: React.FC = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Enrollment Date</label>
                         <p className="mt-1 text-sm text-gray-900">
-                          {studentProfileData.data.user.studentProfile.enrollmentDate 
+                          {studentProfileData.data?.user?.studentProfile?.enrollmentDate 
                             ? new Date(studentProfileData.data.user.studentProfile.enrollmentDate).toLocaleDateString() 
                             : '-'}
                         </p>
@@ -665,7 +747,7 @@ export const StudentManagement: React.FC = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Profile Status</label>
                         <p className="mt-1">
-                          {studentProfileData.data.user.studentProfile.status ? (
+                          {studentProfileData.data?.user?.studentProfile?.status ? (
                             <span className={`px-2 py-1 rounded text-xs font-semibold capitalize ${
                               studentProfileData.data.user.studentProfile.status === 'active' 
                                 ? 'bg-green-100 text-green-800' 
@@ -681,30 +763,42 @@ export const StudentManagement: React.FC = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Profile Photo URL</label>
                         <p className="mt-1 text-sm text-gray-900 break-all">
-                          {studentProfileData.data.user.studentProfile.photoUrl || '-'}
+                          {studentProfileData.data?.user?.studentProfile?.photoUrl || '-'}
                         </p>
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Address</label>
                         <p className="mt-1 text-sm text-gray-900">
-                          {studentProfileData.data.user.studentProfile.address || '-'}
+                          {studentProfileData.data?.user?.studentProfile?.address || '-'}
                         </p>
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Software List</label>
-                        {studentProfileData.data.user.studentProfile.softwareList && studentProfileData.data.user.studentProfile.softwareList.length > 0 ? (
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {studentProfileData.data.user.studentProfile.softwareList.map((software: string, index: number) => (
-                              <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                                {software}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="mt-1 text-sm text-gray-500">-</p>
-                        )}
+                        {(() => {
+                          const softwareList = studentProfileData?.data?.user?.studentProfile?.softwareList;
+                          // Handle different data types: array, string, or null/undefined
+                          let softwareArray: string[] = [];
+                          if (Array.isArray(softwareList)) {
+                            softwareArray = softwareList;
+                          } else if (typeof softwareList === 'string' && softwareList.trim()) {
+                            // If it's a string, split by comma
+                            softwareArray = softwareList.split(',').map(s => s.trim()).filter(s => s.length > 0);
+                          }
+                          
+                          return softwareArray.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {softwareArray.map((software: string, index: number) => (
+                                <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                  {software}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-sm text-gray-500">-</p>
+                          );
+                        })()}
                       </div>
-                      {studentProfileData.data.user.studentProfile.documents && Object.keys(studentProfileData.data.user.studentProfile.documents).length > 0 && (
+                      {studentProfileData.data?.user?.studentProfile?.documents && Object.keys(studentProfileData.data.user.studentProfile.documents).length > 0 && (
                         <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-2">Documents</label>
                           <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 max-h-60 overflow-y-auto">
@@ -714,13 +808,13 @@ export const StudentManagement: React.FC = () => {
                           </div>
                         </div>
                       )}
-                      {studentProfileData.data.user.studentProfile.createdAt && (
+                      {studentProfileData.data?.user?.studentProfile?.createdAt && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700">Profile Created</label>
                           <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData.data.user.studentProfile.createdAt).toLocaleDateString()}</p>
                         </div>
                       )}
-                      {studentProfileData.data.user.studentProfile.updatedAt && (
+                      {studentProfileData.data?.user?.studentProfile?.updatedAt && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700">Profile Updated</label>
                           <p className="mt-1 text-sm text-gray-900">{new Date(studentProfileData.data.user.studentProfile.updatedAt).toLocaleDateString()}</p>
@@ -737,7 +831,7 @@ export const StudentManagement: React.FC = () => {
                 {/* Software Completions */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4 border-b pb-2">Software Completions</h3>
-                  {completionsData?.data.completions && completionsData.data.completions.length > 0 ? (
+                  {completionsData?.data?.completions && Array.isArray(completionsData.data.completions) && completionsData.data.completions.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
@@ -751,7 +845,7 @@ export const StudentManagement: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                          {completionsData.data.completions.map((completion) => (
+                          {completionsData.data.completions.map((completion: any) => (
                             <tr key={completion.id} className="hover:bg-gray-50">
                               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {completion.softwareName}

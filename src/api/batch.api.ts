@@ -23,13 +23,18 @@ export interface Batch {
     email: string;
   };
   enrollments?: Array<{
-    id: number;
-    student: {
+    id?: number;
+    enrollmentDate?: string;
+    enrollmentStatus?: string;
+    student?: {
       id: number;
       name: string;
       email: string;
       phone?: string;
     };
+    name?: string;
+    email?: string;
+    phone?: string;
   }>;
   sessions?: Array<{
     id: number;
@@ -46,6 +51,7 @@ export interface Batch {
     id: number;
     name: string;
     email: string;
+    phone?: string;
   }>;
 }
 
@@ -76,6 +82,8 @@ export interface CreateBatchRequest {
     };
   };
   status?: string;
+  facultyIds?: number[];
+  studentIds?: number[];
 }
 
 export interface UpdateBatchRequest {
@@ -92,6 +100,8 @@ export interface UpdateBatchRequest {
     };
   };
   status?: string;
+  facultyIds?: number[];
+  studentIds?: number[];
 }
 
 export interface SuggestedCandidate {
@@ -144,6 +154,10 @@ export const batchAPI = {
   },
   suggestCandidates: async (batchId: number): Promise<SuggestCandidatesResponse> => {
     const response = await api.get<SuggestCandidatesResponse>(`/batches/${batchId}/candidates/suggest`);
+    return response.data;
+  },
+  assignFaculty: async (batchId: number, facultyIds: number[]): Promise<{ status: string; message: string; data: any }> => {
+    const response = await api.put(`/batches/${batchId}/faculty`, { facultyIds });
     return response.data;
   },
 };

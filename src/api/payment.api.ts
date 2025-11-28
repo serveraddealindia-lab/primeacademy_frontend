@@ -3,14 +3,15 @@ import api from './axios';
 export interface PaymentTransaction {
   id: number;
   studentId: number;
-  enrollmentId?: number;
+  enrollmentId?: number | null;
   amount: number;
+  paidAmount?: number;
   dueDate?: string;
   paidDate?: string;
-  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
-  paymentMethod?: string;
-  transactionId?: string;
-  notes?: string;
+  status: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+  paymentMethod?: string | null;
+  transactionId?: string | null;
+  notes?: string | null;
   createdAt?: string;
   updatedAt?: string;
   student?: {
@@ -35,14 +36,18 @@ export interface CreatePaymentRequest {
   amount: number;
   dueDate: string;
   notes?: string;
+  paymentMethod?: string;
+  transactionId?: string;
 }
 
 export interface UpdatePaymentRequest {
-  status?: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  status?: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
   paidDate?: string;
   paymentMethod?: string;
   transactionId?: string;
   notes?: string;
+  paidAmount?: number;
+  receiptUrl?: string;
 }
 
 export interface PaymentsResponse {

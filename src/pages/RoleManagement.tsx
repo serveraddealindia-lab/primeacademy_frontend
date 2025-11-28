@@ -3,18 +3,39 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { roleAPI, Role, CreateRoleRequest, UpdateRoleRequest, RolePermission } from '../api/role.api';
-import { permissionAPI, Module } from '../api/permission.api';
+import { permissionAPI, Module, ModulesResponse } from '../api/permission.api';
+import { PREDEFINED_ROLE_PERMISSIONS } from '../utils/rolePermissions';
+
+const PREDEFINED_ROLES = ['superadmin', 'admin', 'faculty', 'student', 'employee'];
 
 export const RoleManagement: React.FC = () => {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [selectedPredefinedRole, setSelectedPredefinedRole] = useState<string>('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
   const [rolePermissions, setRolePermissions] = useState<RolePermission[]>([]);
-  const [availableModules, setAvailableModules] = useState<Array<{ value: string; label: string }>>([]);
+  const [availableModules, setAvailableModules] = useState<Array<{ value: string; label: string }>>([
+    { value: 'batches', label: 'Batches' },
+    { value: 'students', label: 'Students' },
+    { value: 'faculty', label: 'Faculty' },
+    { value: 'employees', label: 'Employees' },
+    { value: 'sessions', label: 'Sessions' },
+    { value: 'attendance', label: 'Attendance' },
+    { value: 'payments', label: 'Payments' },
+    { value: 'portfolios', label: 'Portfolios' },
+    { value: 'reports', label: 'Reports' },
+    { value: 'approvals', label: 'Approvals' },
+    { value: 'users', label: 'Users' },
+    { value: 'software_completions', label: 'Software Completions' },
+    { value: 'student_leaves', label: 'Student Leaves' },
+    { value: 'batch_extensions', label: 'Batch Extensions' },
+    { value: 'employee_leaves', label: 'Employee Leaves' },
+    { value: 'faculty_leaves', label: 'Faculty Leaves' },
+  ]);
 
   // Fetch roles
   const { data: rolesData, isLoading } = useQuery({
@@ -23,18 +44,45 @@ export const RoleManagement: React.FC = () => {
     enabled: currentUser?.role === 'superadmin',
   });
 
+  // Hardcoded modules as fallback
+  const FALLBACK_MODULES = [
+    { value: 'batches', label: 'Batches' },
+    { value: 'students', label: 'Students' },
+    { value: 'faculty', label: 'Faculty' },
+    { value: 'employees', label: 'Employees' },
+    { value: 'sessions', label: 'Sessions' },
+    { value: 'attendance', label: 'Attendance' },
+    { value: 'payments', label: 'Payments' },
+    { value: 'portfolios', label: 'Portfolios' },
+    { value: 'reports', label: 'Reports' },
+    { value: 'approvals', label: 'Approvals' },
+    { value: 'users', label: 'Users' },
+    { value: 'software_completions', label: 'Software Completions' },
+    { value: 'student_leaves', label: 'Student Leaves' },
+    { value: 'batch_extensions', label: 'Batch Extensions' },
+    { value: 'employee_leaves', label: 'Employee Leaves' },
+    { value: 'faculty_leaves', label: 'Faculty Leaves' },
+  ];
+
   // Fetch available modules - always enabled for superadmin
-  const { data: modulesData } = useQuery({
+  const {
+    data: modulesData,
+    isLoading: modulesLoading,
+    error: modulesError,
+  } = useQuery<ModulesResponse, Error>({
     queryKey: ['modules'],
     queryFn: () => permissionAPI.getModules(),
     enabled: currentUser?.role === 'superadmin',
+    retry: 1,
   });
 
   useEffect(() => {
-    if (modulesData?.data.modules) {
+    if (modulesData?.data.modules && modulesData.data.modules.length > 0) {
       setAvailableModules(modulesData.data.modules);
+    } else if (!modulesLoading && modulesError) {
+      setAvailableModules(FALLBACK_MODULES);
     }
-  }, [modulesData]);
+  }, [modulesData, modulesLoading, modulesError]);
 
   // Initialize permissions when create modal opens
   useEffect(() => {
@@ -230,6 +278,35 @@ export const RoleManagement: React.FC = () => {
 
   const roles = rolesData?.data.roles || [];
 
+  // Get permissions for a predefined role - only show modules where role has at least one permission
+  const getFilteredPermissions = (roleName: string) => {
+    const permissions = PREDEFINED_ROLE_PERMISSIONS[roleName] || {};
+    // If availableModules is not loaded yet, return empty array
+    if (availableModules.length === 0) return [];
+    
+    return availableModules
+      .map((module) => {
+        const perm = permissions[module.value];
+        if (!perm) return null;
+        
+        // Only include modules where at least one permission is true
+        if (!perm.canView && !perm.canAdd && !perm.canEdit && !perm.canDelete) {
+          return null;
+        }
+        
+        return {
+          id: 0,
+          roleId: 0,
+          module: module.value as Module,
+          canView: perm.canView,
+          canAdd: perm.canAdd,
+          canEdit: perm.canEdit,
+          canDelete: perm.canDelete,
+        };
+      })
+      .filter((p): p is RolePermission => p !== null);
+  };
+
   return (
     <Layout>
       <div className="max-w-7xl mx-auto">
@@ -238,23 +315,122 @@ export const RoleManagement: React.FC = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-bold text-white">Role Management</h1>
-                <p className="mt-2 text-purple-100">Create and manage custom roles with permissions</p>
+                <p className="mt-2 text-purple-100">View all roles and their permissions</p>
               </div>
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="px-4 py-2 bg-white text-purple-600 rounded-lg font-semibold hover:bg-purple-50 transition-colors"
               >
-                + Create Role
+                + Create Custom Role
               </button>
             </div>
           </div>
 
           <div className="p-6">
-            {roles.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500 text-lg">No roles found</p>
-              </div>
-            ) : (
+            {/* Predefined Roles Section */}
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold mb-4">Predefined Roles & Permissions</h2>
+              
+              {availableModules.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Loading modules...</p>
+                </div>
+              ) : (
+                /* All Roles Display in Table Format */
+                <div className="overflow-x-auto border border-gray-300 rounded-md bg-white">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Role Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Permissions Count
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {PREDEFINED_ROLES.map((roleName) => {
+                        const rolePermissions = getFilteredPermissions(roleName);
+                        const activePermissionsCount = rolePermissions.filter(
+                          (p) => p.canView || p.canAdd || p.canEdit || p.canDelete
+                        ).length;
+                        return (
+                          <tr key={roleName} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">
+                                {roleName.charAt(0).toUpperCase() + roleName.slice(1)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                                System
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">
+                                Active
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {activePermissionsCount} / {rolePermissions.length} modules
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    const perms = getFilteredPermissions(roleName);
+                                    setRolePermissions(perms);
+                                    setSelectedPredefinedRole(roleName);
+                                    setIsPermissionModalOpen(true);
+                                  }}
+                                  className="text-purple-600 hover:text-purple-900"
+                                  title="View Permissions"
+                                >
+                                  🔐 Permissions
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const perms = getFilteredPermissions(roleName);
+                                    setRolePermissions(perms);
+                                    setSelectedPredefinedRole(roleName);
+                                    setIsEditModalOpen(true);
+                                  }}
+                                  className="text-orange-600 hover:text-orange-900"
+                                  title="Edit Permissions"
+                                >
+                                  ✏️ Edit
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Custom Roles Section */}
+            <div className="border-t pt-6">
+              <h2 className="text-2xl font-bold mb-4">Custom Roles</h2>
+              {roles.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 text-lg">No custom roles found</p>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -321,7 +497,8 @@ export const RoleManagement: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -578,6 +755,230 @@ export const RoleManagement: React.FC = () => {
         </div>
       )}
 
+      {/* Permission Management Modal for Predefined Roles (View Only) */}
+      {isPermissionModalOpen && selectedPredefinedRole && !selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">
+                View Permissions - {selectedPredefinedRole.charAt(0).toUpperCase() + selectedPredefinedRole.slice(1)}
+              </h2>
+              <button
+                onClick={() => {
+                  setIsPermissionModalOpen(false);
+                  setSelectedPredefinedRole('');
+                  setRolePermissions([]);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> This is a predefined system role. Click "Edit" to modify permissions.
+              </p>
+            </div>
+            <div className="overflow-x-auto border border-gray-300 rounded-md mb-4 max-h-96 overflow-y-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Module
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      View
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Add
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Edit
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Delete
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {rolePermissions.map((perm) => (
+                    <tr key={perm.module} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        {availableModules.find((m) => m.value === perm.module)?.label || perm.module}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {perm.canView ? (
+                          <span className="text-green-600 font-semibold">✓</span>
+                        ) : (
+                          <span className="text-gray-400">✗</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {perm.canAdd ? (
+                          <span className="text-green-600 font-semibold">✓</span>
+                        ) : (
+                          <span className="text-gray-400">✗</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {perm.canEdit ? (
+                          <span className="text-green-600 font-semibold">✓</span>
+                        ) : (
+                          <span className="text-gray-400">✗</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {perm.canDelete ? (
+                          <span className="text-green-600 font-semibold">✓</span>
+                        ) : (
+                          <span className="text-gray-400">✗</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setIsPermissionModalOpen(false);
+                  setSelectedPredefinedRole('');
+                  setRolePermissions([]);
+                }}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal for Predefined Roles */}
+      {isEditModalOpen && selectedPredefinedRole && !selectedRole && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">
+                Edit Permissions - {selectedPredefinedRole.charAt(0).toUpperCase() + selectedPredefinedRole.slice(1)}
+              </h2>
+              <button
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setSelectedPredefinedRole('');
+                  setRolePermissions([]);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-sm text-yellow-800">
+                <strong>Warning:</strong> Modifying predefined role permissions will affect all users with this role. Changes are saved to the system configuration.
+              </p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
+              <div className="overflow-x-auto border border-gray-300 rounded-md max-h-96 overflow-y-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Module
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        View
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Add
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Edit
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Delete
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {rolePermissions.map((perm) => (
+                      <tr key={perm.module} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          {availableModules.find((m) => m.value === perm.module)?.label || perm.module}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={perm.canView}
+                            onChange={(e) => handlePermissionChange(perm.module, 'canView', e.target.checked)}
+                            className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={perm.canAdd}
+                            onChange={(e) => handlePermissionChange(perm.module, 'canAdd', e.target.checked)}
+                            className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={perm.canEdit}
+                            onChange={(e) => handlePermissionChange(perm.module, 'canEdit', e.target.checked)}
+                            className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={perm.canDelete}
+                            onChange={(e) => handlePermissionChange(perm.module, 'canDelete', e.target.checked)}
+                            className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  // Note: For predefined roles, we would need a backend endpoint to update them
+                  // For now, this is just a UI placeholder - you may want to implement backend support
+                  alert('Predefined role permissions update functionality needs to be implemented in the backend.');
+                  setIsEditModalOpen(false);
+                  setSelectedPredefinedRole('');
+                  setRolePermissions([]);
+                }}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+              >
+                Save Permissions
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setSelectedPredefinedRole('');
+                  setRolePermissions([]);
+                }}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Permission Management Modal - Similar to edit but focused on permissions only */}
       {isPermissionModalOpen && selectedRole && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -597,7 +998,7 @@ export const RoleManagement: React.FC = () => {
                 </svg>
               </button>
             </div>
-            <div className="overflow-x-auto border border-gray-300 rounded-md mb-4">
+            <div className="overflow-x-auto border border-gray-300 rounded-md mb-4 max-h-96 overflow-y-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>

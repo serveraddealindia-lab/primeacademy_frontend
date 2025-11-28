@@ -1,4 +1,5 @@
 import api from './axios';
+import { StudentProfile } from './user.api';
 
 export interface Student {
   id: number;
@@ -14,6 +15,35 @@ export interface StudentsResponse {
   data: {
     students: Student[];
     totalCount: number;
+  };
+}
+
+export interface StudentDetails extends Student {
+  phone?: string;
+  avatarUrl?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  studentProfile?: StudentProfile | null;
+  enrollments?: Array<{
+    id: number;
+    status: string;
+    enrollmentDate?: string;
+    batch: {
+      id: number;
+      title: string;
+      software?: string | null;
+      mode?: string | null;
+      status?: string | null;
+      schedule?: Record<string, unknown> | null;
+    } | null;
+  }>;
+}
+
+export interface StudentDetailsResponse {
+  status: string;
+  data: {
+    student: StudentDetails;
   };
 }
 
@@ -49,10 +79,10 @@ export interface EnrollmentResponse {
 export interface CompleteEnrollmentRequest {
   // Basic Information
   studentName: string;
-  email: string;
+  email?: string;
   phone: string;
   whatsappNumber?: string;
-  dateOfAdmission: string;
+  dateOfAdmission?: string;
   
   // Address
   localAddress?: string;
@@ -101,13 +131,16 @@ export interface CompleteEnrollmentResponse {
 
 export const studentAPI = {
   getAllStudents: async (): Promise<StudentsResponse> => {
-    const response = await api.get<StudentsResponse>('/reports/all-students');
+    const response = await api.get<StudentsResponse>('/attendance-reports/all-students');
+    return response.data;
+  },
+
+  getStudentDetails: async (studentId: number): Promise<StudentDetailsResponse> => {
+    const response = await api.get<StudentDetailsResponse>(`/attendance-reports/students/${studentId}/details`);
     return response.data;
   },
 
   createEnrollment: async (data: CreateEnrollmentRequest): Promise<EnrollmentResponse> => {
-    // Note: This endpoint may need to be created in the backend
-    // For now, we'll use a placeholder that can be updated when the endpoint is available
     const response = await api.post<EnrollmentResponse>('/enrollments', data);
     return response.data;
   },

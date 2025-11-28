@@ -25,8 +25,9 @@ export interface FacultyUser {
 export interface FacultyResponse {
   status: string;
   data: {
-    users: FacultyUser[];
-    pagination: {
+    users?: FacultyUser[];
+    faculty?: FacultyUser[];
+    pagination?: {
       total: number;
       page: number;
       limit: number;
@@ -58,9 +59,9 @@ export interface CreateFacultyResponse {
 }
 
 export const facultyAPI = {
-  getAllFaculty: async (): Promise<FacultyResponse> => {
+  getAllFaculty: async (limit: number = 1000): Promise<FacultyResponse> => {
     const response = await api.get<FacultyResponse>('/users', {
-      params: { role: 'faculty' },
+      params: { role: 'faculty', limit, isActive: 'true' },
     });
     return response.data;
   },

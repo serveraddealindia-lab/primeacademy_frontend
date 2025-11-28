@@ -1,6 +1,7 @@
-import React, { ReactNode, useState } from 'react';
+import React, { ReactNode, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
+import { hasModuleAccess } from '../utils/rolePermissions';
 
 interface LayoutProps {
   children: ReactNode;
@@ -11,23 +12,77 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: '🏠' },
-    { name: 'Batches', href: '/batches', icon: '📚' },
-    { name: 'Students', href: '/students', icon: '👥' },
-    { name: 'Faculty', href: '/faculty', icon: '👨‍🏫' },
-    { name: 'Employees', href: '/employees', icon: '💼' },
-    { name: 'Attendance', href: '/attendance', icon: '✅' },
-    ...(user?.role !== 'student' ? [{ name: 'My Attendance', href: '/student-attendance', icon: '📸' }] : []),
-    { name: 'Payments', href: '/payments', icon: '💰' },
-    { name: 'Portfolios', href: '/portfolios', icon: '📁' },
-    { name: 'Reports', href: '/reports', icon: '📊' },
-    { name: 'Approvals', href: '/approvals', icon: '✓' },
-    { name: 'Leave Management', href: '/leaves', icon: '🏖️' },
-    { name: 'Batch Extensions', href: '/batch-extensions', icon: '⏱️' },
-    { name: 'Users', href: '/users', icon: '👤' },
-    ...(user?.role === 'superadmin' ? [{ name: 'Roles', href: '/roles', icon: '🔐' }] : []),
+  // Navigation items with their corresponding module names for permission checking
+  const allNavigationItems = [
+    { name: 'Dashboard', href: '/dashboard', icon: '🏠', module: null }, // Dashboard is always accessible
+    { name: 'Batches', href: '/batches', icon: '📚', module: 'batches' },
+    { name: 'Students', href: '/students', icon: '👥', module: 'students' },
+    { name: 'Faculty', href: '/faculty', icon: '👨‍🏫', module: 'faculty' },
+    { name: 'Employees', href: '/employees', icon: '💼', module: 'employees' },
+    { name: 'Attendance Management', href: '/attendance', icon: '✅', module: 'attendance' }, // Session-based attendance (admin/superadmin only)
+    { name: 'Attendance', href: '/my-attendance', icon: '📸', module: 'attendance' }, // Unified attendance for faculty/employees
+    { name: 'Payments', href: '/payments', icon: '💰', module: 'payments' },
+    { name: 'Portfolios', href: '/portfolios', icon: '📁', module: 'portfolios' },
+    { name: 'Reports', href: '/reports', icon: '📊', module: 'reports' },
+    { name: 'Approvals', href: '/approvals', icon: '✓', module: 'approvals' },
+    { name: 'Leave Management', href: '/leaves', icon: '🏖️', module: null }, // Special handling for leaves
+    { name: 'Batch Extensions', href: '/batch-extensions', icon: '⏱️', module: 'batch_extensions' },
+    { name: 'Users', href: '/users', icon: '👤', module: 'users' },
+    { name: 'Roles', href: '/roles', icon: '🔐', module: null }, // Only for superadmin
+    { name: 'Certificates', href: '/certificates', icon: '🎓', module: null }, // Only for admin/superadmin
+    { name: 'Biometric Settings', href: '/biometric-settings', icon: '👆', module: null }, // Only for admin/superadmin
   ];
+
+  // Filter navigation based on user role permissions
+  const navigation = useMemo(() => {
+    return allNavigationItems.filter((item) => {
+      // Dashboard is always accessible
+      if (item.name === 'Dashboard') return true;
+      
+      // Roles is only for superadmin
+      if (item.name === 'Roles') {
+        return user?.role === 'superadmin';
+      }
+      
+      // Certificates is only for admin/superadmin
+      if (item.name === 'Certificates') {
+        return user?.role === 'admin' || user?.role === 'superadmin';
+      }
+      
+      // Biometric Settings is only for admin/superadmin
+      if (item.name === 'Biometric Settings') {
+        return user?.role === 'admin' || user?.role === 'superadmin';
+      }
+      
+      // Attendance (unified) - show for employees and faculty (not students)
+      // Check by href to distinguish from session-based attendance
+      if (item.href === '/my-attendance') {
+        return (user?.role === 'employee' || user?.role === 'faculty') && hasModuleAccess(user?.role, 'attendance');
+      }
+      
+      // Session-based Attendance Management - admin/superadmin
+      if (item.href === '/attendance') {
+        return (user?.role === 'admin' || user?.role === 'superadmin') && hasModuleAccess(user?.role, 'attendance');
+      }
+      
+      // Leave Management - check based on role-specific leave modules
+      if (item.name === 'Leave Management') {
+        if (!user?.role) return false;
+        if (user.role === 'student') return hasModuleAccess(user.role, 'student_leaves');
+        if (user.role === 'employee') return hasModuleAccess(user.role, 'employee_leaves');
+        if (user.role === 'faculty') return hasModuleAccess(user.role, 'faculty_leaves');
+        // Admin and superadmin can see all leaves
+        return user.role === 'admin' || user.role === 'superadmin';
+      }
+      
+      // For all other items, check module access
+      if (item.module) {
+        return hasModuleAccess(user?.role, item.module);
+      }
+      
+      return false;
+    });
+  }, [user?.role]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex">

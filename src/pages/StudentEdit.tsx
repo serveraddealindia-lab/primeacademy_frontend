@@ -4,39 +4,92 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { userAPI, UpdateUserRequest, UpdateStudentProfileRequest } from '../api/user.api';
+import { studentAPI, StudentDetails } from '../api/student.api';
 
 export const StudentEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
 
-  console.log('StudentEdit component rendered, id:', id, 'user:', user);
-
-  // Fetch student data
-  const { data: studentData, isLoading, error: queryError } = useQuery({
-    queryKey: ['student', id],
+  // Fetch student data with profile/enrollments
+  const {
+    data: studentDetailsResponse,
+    isLoading,
+    error: queryError,
+    refetch: refetchStudentDetails,
+  } = useQuery<StudentDetails>({
+    queryKey: ['student-details', id],
     queryFn: async () => {
       if (!id) {
         throw new Error('Student ID is required');
       }
       try {
-        console.log('Fetching student data for ID:', id);
-        const response = await userAPI.getUser(Number(id));
-        console.log('User response:', response);
-        if (response?.data?.user) {
-          return response.data.user;
-        } else {
-          throw new Error('Invalid response structure');
+        // Try to get student details first (includes enrollments)
+        try {
+          const response = await studentAPI.getStudentDetails(Number(id));
+          console.log('Student details response:', response);
+          if (response?.data?.student) {
+            return response.data.student;
+          }
+        } catch (detailsError: any) {
+          console.log('Student details endpoint failed, trying getUserById:', detailsError);
+          // Fallback to getUserById if student details endpoint fails
         }
+        
+        // Fallback: Use getUserById which is more flexible
+        const userResponse = await userAPI.getUser(Number(id));
+        console.log('User response:', userResponse);
+        if (!userResponse?.data?.user) {
+          throw new Error('Student data not found');
+        }
+        
+        const user = userResponse.data.user;
+        // Convert user response to student details format
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          avatarUrl: user.avatarUrl,
+          isActive: user.isActive,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+          studentProfile: user.studentProfile || null,
+          enrollments: [], // Will be empty if using getUserById fallback
+        };
       } catch (error: any) {
-        console.error('Error fetching student data:', error);
-        console.error('Error response:', error.response?.data);
-        throw error;
+        console.error('Error fetching student details:', error);
+        throw new Error(error.response?.data?.message || error.message || 'Failed to load student details');
       }
     },
-    enabled: !!id && !!user,
+    enabled: !!id && !!user && isAdmin,
     retry: 1,
+  });
+
+  // Debug logging
+  console.log('StudentEdit Debug:', {
+    id,
+    user: user?.role,
+    isAdmin,
+    isLoading,
+    hasData: !!studentDetailsResponse,
+    error: queryError,
+    enabled: !!id && !!user && isAdmin,
+  });
+
+  const studentData = studentDetailsResponse;
+
+  // Debug logging
+  console.log('StudentEdit Debug:', {
+    id,
+    user: user?.role,
+    isAdmin,
+    isLoading,
+    hasData: !!studentDetailsResponse,
+    error: queryError,
+    enabled: !!id && !!user && isAdmin,
   });
 
   const [softwareListInput, setSoftwareListInput] = useState<string>('');
@@ -44,8 +97,9 @@ export const StudentEdit: React.FC = () => {
   const updateUserMutation = useMutation({
     mutationFn: (data: UpdateUserRequest) => userAPI.updateUser(Number(id!), data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student', id] });
+      queryClient.invalidateQueries({ queryKey: ['student-details', id] });
       queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: ['student-profile', id] });
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Failed to update user information');
@@ -55,9 +109,9 @@ export const StudentEdit: React.FC = () => {
   const updateStudentProfileMutation = useMutation({
     mutationFn: (data: UpdateStudentProfileRequest) => userAPI.updateStudentProfile(Number(id!), data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student', id] });
+      queryClient.invalidateQueries({ queryKey: ['student-details', id] });
       queryClient.invalidateQueries({ queryKey: ['students'] });
-      queryClient.invalidateQueries({ queryKey: ['student-profile'] });
+      queryClient.invalidateQueries({ queryKey: ['student-profile', id] });
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Failed to update student profile');
@@ -68,21 +122,48 @@ export const StudentEdit: React.FC = () => {
   if (!user) {
     return (
       <Layout>
-        <div className="max-w-7xl mx-auto">
-          <div className="flex justify-center items-center min-h-screen">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-white shadow-xl rounded-lg p-6">
+            <div className="flex justify-center items-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+            </div>
+            <p className="text-center text-gray-600 mt-4">Loading user information...</p>
           </div>
         </div>
       </Layout>
     );
   }
 
-  if (user?.role !== 'admin' && user?.role !== 'superadmin') {
+  if (!isAdmin) {
     return (
       <Layout>
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto p-6">
           <div className="bg-white shadow-xl rounded-lg p-6">
-            <p className="text-red-600">You don't have permission to edit students.</p>
+            <p className="text-red-600 text-lg font-semibold">You don't have permission to edit students.</p>
+            <p className="text-gray-600 mt-2">Only administrators can edit student information.</p>
+            <button
+              onClick={() => navigate('/students')}
+              className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+            >
+              Back to Students
+            </button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Check if query is enabled - if not, show message
+  const queryEnabled = !!id && !!user && isAdmin;
+  if (!queryEnabled) {
+    return (
+      <Layout>
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-white shadow-xl rounded-lg p-6">
+            <p className="text-red-600 text-lg font-semibold">Cannot load student data</p>
+            <p className="text-gray-600 mt-2">
+              {!id ? 'Student ID is missing.' : !user ? 'User not authenticated.' : 'You do not have permission.'}
+            </p>
             <button
               onClick={() => navigate('/students')}
               className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
@@ -98,9 +179,12 @@ export const StudentEdit: React.FC = () => {
   if (isLoading) {
     return (
       <Layout>
-        <div className="max-w-7xl mx-auto">
-          <div className="flex justify-center items-center min-h-screen">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-white shadow-xl rounded-lg p-6">
+            <div className="flex justify-center items-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+            </div>
+            <p className="text-center text-gray-600 mt-4">Loading student data...</p>
           </div>
         </div>
       </Layout>
@@ -110,34 +194,110 @@ export const StudentEdit: React.FC = () => {
   if (queryError) {
     return (
       <Layout>
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto p-6">
           <div className="bg-white shadow-xl rounded-lg p-6">
-            <p className="text-red-600">Error loading student data: {queryError instanceof Error ? queryError.message : 'Unknown error'}</p>
-            <button
-              onClick={() => navigate('/students')}
-              className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-            >
-              Back to Students
-            </button>
+            <p className="text-red-600 text-lg font-semibold">Error loading student data</p>
+            <p className="text-gray-600 mt-2">{queryError instanceof Error ? queryError.message : 'Unknown error occurred'}</p>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => refetchStudentDetails()}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('/students')}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Back to Students
+              </button>
+            </div>
           </div>
         </div>
       </Layout>
     );
   }
 
-  if (!studentData) {
+  if (!studentData && !isLoading) {
+    return (
+      <Layout>
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-white shadow-xl rounded-lg p-6">
+            <p className="text-red-600 text-lg font-semibold">Student not found</p>
+            <p className="text-gray-600 mt-2">Student ID: {id}</p>
+            <p className="text-gray-500 mt-1">The student data could not be loaded.</p>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => refetchStudentDetails()}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('/students')}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Back to Students
+              </button>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Final safety check - if we still don't have data but not loading, show error
+  if (!studentData && !isLoading && !queryError) {
     return (
       <Layout>
         <div className="max-w-7xl mx-auto">
           <div className="bg-white shadow-xl rounded-lg p-6">
-            <p className="text-red-600">Student not found or data is still loading.</p>
+            <p className="text-red-600">Unable to load student data.</p>
             <p className="text-gray-500 mt-2">ID: {id}</p>
-            <button
-              onClick={() => navigate('/students')}
-              className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-            >
-              Back to Students
-            </button>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => refetchStudentDetails()}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('/students')}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Back to Students
+              </button>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Final safety check - ensure we have studentData before rendering form
+  if (!studentData) {
+    // This should not happen due to earlier checks, but just in case
+    return (
+      <Layout>
+        <div className="max-w-7xl mx-auto p-6">
+          <div className="bg-white shadow-xl rounded-lg p-6">
+            <p className="text-red-600 text-lg font-semibold">Student data is not available</p>
+            <p className="text-gray-600 mt-2">Student ID: {id}</p>
+            <p className="text-gray-500 mt-1">Please try again or go back to the students list.</p>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => refetchStudentDetails()}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => navigate('/students')}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Back to Students
+              </button>
+            </div>
           </div>
         </div>
       </Layout>
@@ -199,6 +359,8 @@ export const StudentEdit: React.FC = () => {
       if (studentData?.studentProfile || Object.values(profileData).some(v => v !== undefined && v !== '')) {
         await updateStudentProfileMutation.mutateAsync(profileData);
       }
+      // Refresh the student data
+      queryClient.invalidateQueries({ queryKey: ['student-details', id] });
       alert('Student updated successfully!');
       navigate('/students');
     } catch (error) {
@@ -209,7 +371,7 @@ export const StudentEdit: React.FC = () => {
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto p-6">
         <div className="bg-white shadow-xl rounded-lg overflow-hidden">
           <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
             <div className="flex justify-between items-center">
@@ -430,6 +592,53 @@ export const StudentEdit: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Enrollment Overview */}
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-bold">Current Batches</h2>
+                  <span className="text-sm text-gray-500">
+                    {studentData?.enrollments?.length || 0} active enrollment{(studentData?.enrollments?.length || 0) === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {studentData?.enrollments && studentData.enrollments.length > 0 ? (
+                  <div className="space-y-3">
+                    {studentData.enrollments.map((enrollment) => (
+                      <div
+                        key={enrollment.id}
+                        className="p-4 border border-gray-200 rounded-lg flex flex-col gap-2 md:flex-row md:items-center md:justify-between bg-gray-50"
+                      >
+                        <div>
+                          <p className="text-lg font-semibold text-gray-900">
+                            {enrollment.batch?.title || `Batch #${enrollment.batch?.id ?? 'N/A'}`}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {(enrollment.batch?.software || 'Software N/A') + ' · ' + (enrollment.batch?.mode || 'Mode N/A')}
+                          </p>
+                          {enrollment.enrollmentDate && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Enrolled on {new Date(enrollment.enrollmentDate).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                            enrollment.status === 'active'
+                              ? 'bg-green-100 text-green-700'
+                              : enrollment.status === 'completed'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {enrollment.status || 'N/A'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm">Student is not enrolled in any batches yet.</p>
+                )}
               </div>
 
               {/* Action Buttons */}

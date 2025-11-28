@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { batchAPI, CreateBatchRequest, SuggestedCandidate } from '../api/batch.api';
 import { studentAPI } from '../api/student.api';
-import { studentAPI as enrollmentAPI } from '../api/student.api';
+import { facultyAPI } from '../api/faculty.api';
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -21,6 +21,7 @@ export const BatchCreate: React.FC = () => {
   const [daySchedules, setDaySchedules] = useState<Record<string, DaySchedule>>({});
   const [applyToAll, setApplyToAll] = useState(false);
   const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
+  const [selectedFaculty, setSelectedFaculty] = useState<number[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestedCandidates, setSuggestedCandidates] = useState<SuggestedCandidate[]>([]);
   const [showOtherSoftwareInput, setShowOtherSoftwareInput] = useState(false);
@@ -33,26 +34,14 @@ export const BatchCreate: React.FC = () => {
     queryFn: () => studentAPI.getAllStudents(),
   });
 
+  // Fetch all faculty (with high limit to get all)
+  const { data: facultyData, isLoading: isLoadingFaculty } = useQuery({
+    queryKey: ['faculty'],
+    queryFn: () => facultyAPI.getAllFaculty(1000), // Get up to 1000 faculty
+  });
+
   const createBatchMutation = useMutation({
-    mutationFn: async (data: CreateBatchRequest) => {
-      const response = await batchAPI.createBatch(data);
-      // If students are selected, enroll them
-      if (selectedStudents.length > 0 && response.data.batch) {
-        const enrollmentPromises = selectedStudents.map(studentId =>
-          enrollmentAPI.createEnrollment({
-            studentId,
-            batchId: response.data.batch.id,
-            enrollmentDate: new Date().toISOString().split('T')[0],
-            status: 'active',
-          }).catch(err => {
-            console.error(`Failed to enroll student ${studentId}:`, err);
-            return null;
-          })
-        );
-        await Promise.all(enrollmentPromises);
-      }
-      return response;
-    },
+    mutationFn: async (data: CreateBatchRequest) => batchAPI.createBatch(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['batches'] });
       queryClient.invalidateQueries({ queryKey: ['students'] });
@@ -112,6 +101,12 @@ export const BatchCreate: React.FC = () => {
       ? selectedSoftwares.join(', ')
       : undefined;
     
+    // Validate faculty selection
+    if (selectedFaculty.length === 0) {
+      alert('Please select at least one faculty member to assign to this batch.');
+      return;
+    }
+
     const data: CreateBatchRequest = {
       title: formData.get('title') as string,
       software: softwareValue,
@@ -124,6 +119,8 @@ export const BatchCreate: React.FC = () => {
         Object.fromEntries(
           Object.entries(daySchedules).filter(([_, times]) => times.startTime && times.endTime)
         ) : undefined,
+      facultyIds: selectedFaculty,
+      studentIds: selectedStudents.length > 0 ? selectedStudents : undefined,
     };
     createBatchMutation.mutate(data);
   };
@@ -177,6 +174,14 @@ export const BatchCreate: React.FC = () => {
     );
   };
 
+  const handleToggleFaculty = (facultyId: number) => {
+    setSelectedFaculty(prev => 
+      prev.includes(facultyId) 
+        ? prev.filter(id => id !== facultyId)
+        : [...prev, facultyId]
+    );
+  };
+
   const handleSelectSuggested = (candidate: SuggestedCandidate) => {
     if (candidate.status === 'available' || candidate.status === 'fees_overdue') {
       handleToggleStudent(candidate.studentId);
@@ -184,6 +189,7 @@ export const BatchCreate: React.FC = () => {
   };
 
   const students = studentsData?.data.students || [];
+  const faculty = facultyData?.data?.users || [];
 
   if (user?.role !== 'admin' && user?.role !== 'superadmin') {
     return (
@@ -409,6 +415,63 @@ export const BatchCreate: React.FC = () => {
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Faculty Assignment Section */}
+              <div className="pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Assign Faculty <span className="text-red-500">*</span>
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">Select at least one faculty member to assign to this batch</p>
+                {facultyData?.data?.users && facultyData.data.users.length === 0 ? (
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      No faculty members found. Please create faculty users first.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                      {isLoadingFaculty ? (
+                        <div className="flex items-center justify-center py-4">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
+                          <span className="ml-2 text-sm text-gray-500">Loading faculty...</span>
+                        </div>
+                      ) : faculty.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">No active faculty members found</p>
+                      ) : (
+                        faculty
+                          .filter((fac) => fac.isActive !== false)
+                          .map((fac) => (
+                            <label key={fac.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedFaculty.includes(fac.id)}
+                                onChange={() => handleToggleFaculty(fac.id)}
+                                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500 mr-3"
+                              />
+                              <div>
+                                <span className="font-medium">{fac.name}</span>
+                                <span className="text-sm text-gray-600 ml-2">({fac.email})</span>
+                                {fac.phone && (
+                                  <span className="text-xs text-gray-500 ml-2">• {fac.phone}</span>
+                                )}
+                              </div>
+                            </label>
+                          ))
+                      )}
+                    </div>
+                    {selectedFaculty.length > 0 ? (
+                      <p className="mt-2 text-sm text-green-600 font-medium">
+                        ✓ {selectedFaculty.length} faculty member(s) selected
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-sm text-red-600">
+                        ⚠ Please select at least one faculty member
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
 
               {/* Student Selection Section */}

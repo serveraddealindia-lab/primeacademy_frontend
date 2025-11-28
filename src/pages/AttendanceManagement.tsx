@@ -1,219 +1,460 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Layout } from '../components/Layout';
-import { attendanceAPI, MarkAttendanceRequest } from '../api/attendance.api';
-import { sessionAPI } from '../api/session.api';
+import { useAuth } from '../context/AuthContext';
+import { batchAPI, Batch } from '../api/batch.api';
+import { attendanceReportAPI, PunchSummaryRow, StudentAttendanceRow } from '../api/attendanceReport.api';
+import { studentAPI } from '../api/student.api';
+import { facultyAPI, FacultyUser } from '../api/faculty.api';
+import { employeeAPI, Employee } from '../api/employee.api';
+import { attendanceAPI, Attendance } from '../api/attendance.api';
+
+type UserRoleFilter = 'student' | 'faculty' | 'employee';
+type StudentUserAttendance = { type: 'student'; rows: Attendance[] };
+type PunchUserAttendance = { type: 'punch'; rows: PunchSummaryRow[]; summary: { punches: number; totalHours: string } };
+type UserAttendanceResult = StudentUserAttendance | PunchUserAttendance | null;
+
+const emptyState = (
+  <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg">No data found for the selected filters.</div>
+);
 
 export const AttendanceManagement: React.FC = () => {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
-  const [isMarkModalOpen, setIsMarkModalOpen] = useState(false);
+  const isAdminUser = user?.role === 'superadmin' || user?.role === 'admin';
+  const [activeTab, setActiveTab] = useState<'batches' | 'users'>('batches');
+  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
+  const [batchFilters, setBatchFilters] = useState<{ from: string; to: string }>({ from: '', to: '' });
+  const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>('student');
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [userFilters, setUserFilters] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
+  if (!isAdminUser) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-lg p-8 mt-10 text-center space-y-4">
+          <h1 className="text-3xl font-bold text-gray-900">Attendance Management</h1>
+          <p className="text-gray-600 leading-relaxed">
+            This dashboard is available for Admin and Superadmin roles. Please use the Attendance tab for punch in/out and
+            session management.
+          </p>
+        </div>
+      </Layout>
+    );
+  }
 
-  // Fetch sessions
-  const { data: sessionsData } = useQuery({
-    queryKey: ['sessions'],
-    queryFn: () => sessionAPI.getAllSessions(),
+  const { data: batchesResponse, isLoading: isLoadingBatches } = useQuery({
+    queryKey: ['attendance-batches'],
+    queryFn: () => batchAPI.getAllBatches(),
+  });
+  const batches = batchesResponse?.data || [];
+
+  useEffect(() => {
+    if (!selectedBatchId && batches.length > 0) {
+      setSelectedBatchId(batches[0].id);
+    }
+  }, [batches, selectedBatchId]);
+
+  const sanitizedBatchFilters = useMemo(
+    () => ({
+      ...(batchFilters.from ? { from: batchFilters.from } : {}),
+      ...(batchFilters.to ? { to: batchFilters.to } : {}),
+    }),
+    [batchFilters.from, batchFilters.to]
+  );
+
+  const sanitizedUserFilters = useMemo(
+    () => ({
+      ...(userFilters.from ? { from: userFilters.from } : {}),
+      ...(userFilters.to ? { to: userFilters.to } : {}),
+    }),
+    [userFilters.from, userFilters.to]
+  );
+
+  const { data: batchAttendanceData, isFetching: isFetchingBatchAttendance } = useQuery({
+    queryKey: ['batch-attendance-report', selectedBatchId, batchFilters.from, batchFilters.to],
+    queryFn: () =>
+      attendanceReportAPI.getStudentAttendance({
+        batchId: selectedBatchId!,
+        ...sanitizedBatchFilters,
+      }),
+    enabled: !!selectedBatchId,
   });
 
-  // Fetch attendance for selected session
-  const { data: attendanceData, isLoading } = useQuery({
-    queryKey: ['attendance', selectedSessionId],
-    queryFn: () => attendanceAPI.getSessionAttendance(selectedSessionId!),
-    enabled: selectedSessionId !== null,
+  const { data: facultyResponse } = useQuery({
+    queryKey: ['attendance-faculty'],
+    queryFn: () => facultyAPI.getAllFaculty(500),
   });
 
-  const markAttendanceMutation = useMutation({
-    mutationFn: ({ sessionId, data }: { sessionId: number; data: MarkAttendanceRequest }) =>
-      attendanceAPI.markAttendance(sessionId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['attendance', selectedSessionId] });
-      setIsMarkModalOpen(false);
-      alert('Attendance marked successfully!');
+  const { data: employeeResponse } = useQuery({
+    queryKey: ['attendance-employees'],
+    queryFn: () => employeeAPI.getAllEmployees(),
+  });
+
+  const { data: studentsResponse } = useQuery({
+    queryKey: ['attendance-students'],
+    queryFn: () => studentAPI.getAllStudents(),
+  });
+
+  const facultyList = facultyResponse?.data?.users || facultyResponse?.data?.faculty || [];
+  const employeeList = employeeResponse?.data?.users || [];
+  const studentList = studentsResponse?.data.students || [];
+
+  const userOptions = useMemo(() => {
+    if (userRoleFilter === 'student') {
+      return studentList.map((student) => ({
+        id: student.id,
+        name: student.name,
+        email: student.email,
+      }));
+    }
+    if (userRoleFilter === 'faculty') {
+      return facultyList.map((faculty: FacultyUser) => ({
+        id: faculty.id,
+        name: faculty.name,
+        email: faculty.email,
+      }));
+    }
+    return employeeList.map((employee: Employee) => ({
+      id: employee.id,
+      name: employee.name,
+      email: employee.email,
+    }));
+  }, [employeeList, facultyList, studentList, userRoleFilter]);
+
+  useEffect(() => {
+    if (userOptions && userOptions.length > 0) {
+      setSelectedUserId(userOptions[0].id);
+    } else {
+      setSelectedUserId(null);
+    }
+  }, [userOptions]);
+
+  const {
+    data: userAttendanceData,
+    isFetching: isFetchingUserAttendance,
+  } = useQuery<UserAttendanceResult>({
+    queryKey: ['user-attendance', userRoleFilter, selectedUserId, userFilters.from, userFilters.to],
+    queryFn: async () => {
+      if (!selectedUserId) return null;
+      if (userRoleFilter === 'student') {
+        const response = await attendanceAPI.getStudentAttendance(selectedUserId, sanitizedUserFilters);
+        return {
+          type: 'student',
+          rows: response.data.attendances,
+        };
+      }
+
+      const response = await attendanceReportAPI.getPunchSummary({
+        userId: selectedUserId,
+        role: userRoleFilter,
+        ...sanitizedUserFilters,
+      });
+
+      return {
+        type: 'punch',
+        rows: response.rows,
+        summary: response.summary,
+      };
     },
-    onError: (error: any) => {
-      alert(error.response?.data?.message || 'Failed to mark attendance');
-    },
+    enabled: !!selectedUserId,
   });
 
-  const sessions = sessionsData?.data.sessions || [];
-  const attendances = attendanceData?.data.attendances || [];
+  const renderBatchAttendance = () => {
+    if (isLoadingBatches) {
+      return <div className="py-12 text-center text-gray-500">Loading batches...</div>;
+    }
 
-  const handleMarkAttendance = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedSessionId) return;
-    const formData = new FormData(e.currentTarget);
-    const data: MarkAttendanceRequest = {
-      studentId: parseInt(formData.get('studentId') as string),
-      status: formData.get('status') as 'present' | 'absent' | 'manual_present',
-      isManual: formData.get('isManual') === 'true',
-    };
-    markAttendanceMutation.mutate({ sessionId: selectedSessionId, data });
+    if (batches.length === 0) {
+      return <div className="py-12 text-center text-gray-500">No batches available.</div>;
+    }
+
+    const rows: StudentAttendanceRow[] = batchAttendanceData?.rows || [];
+
+    return (
+      <div className="space-y-8">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Batch</label>
+            <select
+              value={selectedBatchId || ''}
+              onChange={(e) => setSelectedBatchId(Number(e.target.value) || null)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              {batches.map((batch: Batch) => (
+                <option key={batch.id} value={batch.id}>
+                  {batch.title} (#{batch.id})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+            <input
+              type="date"
+              value={batchFilters.from}
+              onChange={(e) => setBatchFilters((prev) => ({ ...prev, from: e.target.value }))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+            <input
+              type="date"
+              value={batchFilters.to}
+              onChange={(e) => setBatchFilters((prev) => ({ ...prev, to: e.target.value }))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() =>
+                attendanceReportAPI.downloadStudentAttendanceCsv({
+                  batchId: selectedBatchId!,
+                  ...sanitizedBatchFilters,
+                })
+              }
+              disabled={!selectedBatchId}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
+            >
+              Download CSV
+            </button>
+          </div>
+        </div>
+
+        {isFetchingBatchAttendance ? (
+          <div className="py-12 text-center text-gray-500">Loading attendance...</div>
+        ) : rows.length === 0 ? (
+          emptyState
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Present</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Absent</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Late</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendance %</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {rows.map((row) => (
+                  <tr key={row.studentId} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <p className="font-semibold">{row.studentName}</p>
+                      <p className="text-xs text-gray-500">{row.studentEmail}</p>
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm text-green-700 font-semibold">{row.present}</td>
+                    <td className="px-6 py-4 text-center text-sm text-red-600 font-semibold">{row.absent}</td>
+                    <td className="px-6 py-4 text-center text-sm text-blue-600 font-semibold">{row.manualPresent}</td>
+                    <td className="px-6 py-4 text-center text-sm text-gray-900 font-semibold">{row.total}</td>
+                    <td className="px-6 py-4 text-center text-sm">
+                      <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 font-semibold">{row.attendanceRate}%</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderUserAttendance = () => {
+    return (
+      <div className="space-y-8">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">User Type</label>
+            <select
+              value={userRoleFilter}
+              onChange={(e) => setUserRoleFilter(e.target.value as UserRoleFilter)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="student">Students</option>
+              <option value="faculty">Faculty</option>
+              <option value="employee">Employees</option>
+            </select>
+          </div>
+          <div className="flex-1 min-w-[220px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">User</label>
+            <select
+              value={selectedUserId || ''}
+              onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              {userOptions?.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name} {option.email ? `(${option.email})` : ''}
+                </option>
+              )) || <option value="">No users available</option>}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+            <input
+              type="date"
+              value={userFilters.from}
+              onChange={(e) => setUserFilters((prev) => ({ ...prev, from: e.target.value }))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+            <input
+              type="date"
+              value={userFilters.to}
+              onChange={(e) => setUserFilters((prev) => ({ ...prev, to: e.target.value }))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+          <div className="flex gap-2">
+            {userRoleFilter !== 'student' && (
+              <button
+                onClick={() =>
+                  attendanceReportAPI.downloadPunchSummaryCsv({
+                    userId: selectedUserId || undefined,
+                    role: userRoleFilter,
+                    ...sanitizedUserFilters,
+                  })
+                }
+                disabled={!selectedUserId}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
+              >
+                Download CSV
+              </button>
+            )}
+          </div>
+        </div>
+
+        {isFetchingUserAttendance ? (
+          <div className="py-10 text-center text-gray-500">Loading user attendance...</div>
+        ) : !userAttendanceData || !selectedUserId ? (
+          emptyState
+        ) : userAttendanceData.type === 'student' ? (
+          <>
+            {userAttendanceData.rows.length === 0 ? (
+              emptyState
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Session / Topic</th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Marked At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {userAttendanceData.rows.map((record) => (
+                      <tr key={record.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {record.session?.date ? new Date(record.session.date).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{record.session?.topic || `Session #${record.sessionId}`}</td>
+                        <td className="px-6 py-4 text-center">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                              record.status === 'absent'
+                                ? 'bg-red-100 text-red-700'
+                                : record.status === 'manual_present'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-green-100 text-green-700'
+                            }`}
+                          >
+                            {record.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{record.markedAt ? new Date(record.markedAt).toLocaleString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-xs text-green-700 uppercase tracking-wide">Total Punch Days</p>
+                <p className="text-2xl font-bold text-green-900 mt-1">{userAttendanceData.summary?.punches ?? 0}</p>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <p className="text-xs text-orange-700 uppercase tracking-wide">Total Hours</p>
+                <p className="text-2xl font-bold text-orange-900 mt-1">{userAttendanceData.summary?.totalHours ?? '0.00'}</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-xs text-blue-700 uppercase tracking-wide">Role</p>
+                <p className="text-2xl font-bold text-blue-900 mt-1 capitalize">{userRoleFilter}</p>
+              </div>
+            </div>
+            {userAttendanceData.rows.length === 0 ? (
+              emptyState
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Punch In</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Punch Out</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {(userAttendanceData.rows as PunchSummaryRow[]).map((row, index) => (
+                      <tr key={`${row.date}-${index}`} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm text-gray-900">{new Date(row.date).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{row.punchInAt ? new Date(row.punchInAt).toLocaleTimeString() : '-'}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{row.punchOutAt ? new Date(row.punchOutAt).toLocaleTimeString() : '-'}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900 font-semibold">{row.hours}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
   };
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-8">
         <div className="bg-white shadow-xl rounded-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
+          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-3xl font-bold text-white">Attendance Management</h1>
-              <p className="mt-2 text-orange-100">Track attendance</p>
+              <p className="mt-1 text-orange-100">Monitor attendance by batch or individual users.</p>
             </div>
-          </div>
-
-          <div className="p-6">
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Session</label>
-              <select
-                value={selectedSessionId || ''}
-                onChange={(e) => setSelectedSessionId(e.target.value ? parseInt(e.target.value) : null)}
-                className="w-full md:w-1/3 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+            <div className="flex gap-3">
+              <button
+                onClick={() => setActiveTab('batches')}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm ${
+                  activeTab === 'batches' ? 'bg-white text-orange-600' : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
               >
-                <option value="">Select a session</option>
-                {sessions.map((session) => (
-                  <option key={session.id} value={session.id}>
-                    {new Date(session.date).toLocaleDateString()} - {session.startTime} ({session.batch?.title || `Batch ${session.batchId}`})
-                  </option>
-                ))}
-              </select>
+                Batch Attendance
+              </button>
+              <button
+                onClick={() => setActiveTab('users')}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm ${
+                  activeTab === 'users' ? 'bg-white text-orange-600' : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                User Attendance
+              </button>
             </div>
-
-            {selectedSessionId && (
-              <>
-                {(user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'faculty') && (
-                  <div className="mb-4">
-                    <button
-                      onClick={() => setIsMarkModalOpen(true)}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors"
-                    >
-                      + Mark Attendance
-                    </button>
-                  </div>
-                )}
-
-                {isLoading ? (
-                  <div className="flex justify-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
-                  </div>
-                ) : attendances.length === 0 ? (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 text-lg">No attendance records found for this session</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marked At</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {attendances.map((attendance) => (
-                          <tr key={attendance.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">{attendance.student?.name || `Student ${attendance.studentId}`}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-500">{attendance.student?.email || '-'}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                attendance.status === 'present' || attendance.status === 'manual_present'
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}>
-                                {attendance.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                attendance.isManual ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
-                              }`}>
-                                {attendance.isManual ? 'Manual' : 'Auto'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-500">
-                                {attendance.markedAt ? new Date(attendance.markedAt).toLocaleString() : '-'}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
           </div>
+          <div className="p-8">{activeTab === 'batches' ? renderBatchAttendance() : renderUserAttendance()}</div>
         </div>
       </div>
-
-      {/* Mark Attendance Modal */}
-      {isMarkModalOpen && selectedSessionId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-2xl font-bold mb-4">Mark Attendance</h2>
-            <form onSubmit={handleMarkAttendance}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Student ID *</label>
-                <input
-                  type="number"
-                  name="studentId"
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
-                <select
-                  name="status"
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="present">Present</option>
-                  <option value="absent">Absent</option>
-                  <option value="manual_present">Manual Present</option>
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    name="isManual"
-                    value="true"
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-700">Manual Marking</span>
-                </label>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={markAttendanceMutation.isPending}
-                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50"
-                >
-                  {markAttendanceMutation.isPending ? 'Marking...' : 'Mark Attendance'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsMarkModalOpen(false)}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </Layout>
   );
 };

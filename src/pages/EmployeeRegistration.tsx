@@ -13,12 +13,69 @@ interface RegisterUserRequest {
   role: 'employee';
 }
 
+interface EmployeeFormData {
+  employeeId: string;
+  gender: string;
+  dateOfBirth: string;
+  nationality: string;
+  maritalStatus: string;
+  department: string;
+  designation: string;
+  dateOfJoining: string;
+  employmentType: string;
+  reportingManager: string;
+  workLocation: string;
+  bankName: string;
+  accountNumber: string;
+  ifscCode: string;
+  branch: string;
+  panNumber: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  address: string;
+  emergencyContactName: string;
+  emergencyRelationship: string;
+  emergencyPhoneNumber: string;
+  emergencyAlternatePhone: string;
+  documents: string[];
+}
+
 export const EmployeeRegistration: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 6;
   const [createdUserId, setCreatedUserId] = useState<number | null>(null);
+  
+  // State to persist form data across steps
+  const [formData, setFormData] = useState<EmployeeFormData>({
+    employeeId: '',
+    gender: '',
+    dateOfBirth: '',
+    nationality: '',
+    maritalStatus: '',
+    department: '',
+    designation: '',
+    dateOfJoining: '',
+    employmentType: '',
+    reportingManager: '',
+    workLocation: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    branch: '',
+    panNumber: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    address: '',
+    emergencyContactName: '',
+    emergencyRelationship: '',
+    emergencyPhoneNumber: '',
+    emergencyAlternatePhone: '',
+    documents: [],
+  });
 
   // Register user first
   const registerUserMutation = useMutation({
@@ -64,17 +121,104 @@ export const EmployeeRegistration: React.FC = () => {
     registerUserMutation.mutate(userData);
   };
 
+  // Handle input changes and update state
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  // Handle radio button changes
+  const handleRadioChange = (name: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  // Handle checkbox changes for documents
+  const handleDocumentChange = (document: string, checked: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      documents: checked
+        ? [...prev.documents, document]
+        : prev.documents.filter(doc => doc !== document),
+    }));
+  };
+
+  // Save current step data before moving to next step
+  const saveCurrentStepData = (step: number) => {
+    const form = document.querySelector('form');
+    if (!form) return;
+
+    const formDataObj = new FormData(form);
+    
+    // Update state with current form values
+    setFormData(prev => {
+      const updated = { ...prev };
+      
+      // Step 2: Personal Information
+      if (step === 2) {
+        updated.employeeId = (formDataObj.get('employeeId') as string) || prev.employeeId;
+        updated.gender = (formDataObj.get('gender') as string) || prev.gender;
+        updated.dateOfBirth = (formDataObj.get('dateOfBirth') as string) || prev.dateOfBirth;
+        updated.nationality = (formDataObj.get('nationality') as string) || prev.nationality;
+        updated.maritalStatus = (formDataObj.get('maritalStatus') as string) || prev.maritalStatus;
+        updated.address = (formDataObj.get('address') as string) || prev.address;
+        updated.city = (formDataObj.get('city') as string) || prev.city;
+        updated.state = (formDataObj.get('state') as string) || prev.state;
+        updated.postalCode = (formDataObj.get('postalCode') as string) || prev.postalCode;
+      }
+      // Step 3: Employment Information
+      else if (step === 3) {
+        updated.department = (formDataObj.get('department') as string) || prev.department;
+        updated.designation = (formDataObj.get('designation') as string) || prev.designation;
+        updated.dateOfJoining = (formDataObj.get('dateOfJoining') as string) || prev.dateOfJoining;
+        updated.employmentType = (formDataObj.get('employmentType') as string) || prev.employmentType;
+        updated.reportingManager = (formDataObj.get('reportingManager') as string) || prev.reportingManager;
+        updated.workLocation = (formDataObj.get('workLocation') as string) || prev.workLocation;
+      }
+      // Step 4: Bank Details
+      else if (step === 4) {
+        updated.bankName = (formDataObj.get('bankName') as string) || prev.bankName;
+        updated.accountNumber = (formDataObj.get('accountNumber') as string) || prev.accountNumber;
+        updated.ifscCode = (formDataObj.get('ifscCode') as string) || prev.ifscCode;
+        updated.branch = (formDataObj.get('branch') as string) || prev.branch;
+        updated.panNumber = (formDataObj.get('panNumber') as string) || prev.panNumber;
+      }
+      // Step 5: Emergency Contact
+      else if (step === 5) {
+        updated.emergencyContactName = (formDataObj.get('emergencyContactName') as string) || prev.emergencyContactName;
+        updated.emergencyRelationship = (formDataObj.get('emergencyRelationship') as string) || prev.emergencyRelationship;
+        updated.emergencyPhoneNumber = (formDataObj.get('emergencyPhoneNumber') as string) || prev.emergencyPhoneNumber;
+        updated.emergencyAlternatePhone = (formDataObj.get('emergencyAlternatePhone') as string) || prev.emergencyAlternatePhone;
+      }
+      // Step 6: Documents
+      else if (step === 6) {
+        const documents = formDataObj.getAll('documents') as string[];
+        updated.documents = documents.length > 0 ? documents : prev.documents;
+      }
+      
+      return updated;
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
     
     if (!createdUserId) {
       alert('Please complete user registration first');
       return;
     }
 
-    // Get selected documents
-    const documents = formData.getAll('documents') as string[];
+    // Validate required fields
+    if (!formData.employeeId || formData.employeeId.trim() === '') {
+      alert('Employee ID is required');
+      setCurrentStep(2); // Go back to step 2 where Employee ID is entered
+      return;
+    }
     
     const data: CreateEmployeeProfileRequest & { 
       address?: string;
@@ -85,31 +229,31 @@ export const EmployeeRegistration: React.FC = () => {
       documentsSubmitted?: string;
     } = {
       userId: createdUserId,
-      employeeId: formData.get('employeeId') as string,
-      gender: formData.get('gender') as string || undefined,
-      dateOfBirth: formData.get('dateOfBirth') as string || undefined,
-      nationality: formData.get('nationality') as string || undefined,
-      maritalStatus: formData.get('maritalStatus') as string || undefined,
-      department: formData.get('department') as string || undefined,
-      designation: formData.get('designation') as string || undefined,
-      dateOfJoining: formData.get('dateOfJoining') as string || undefined,
-      employmentType: formData.get('employmentType') as string || undefined,
-      reportingManager: formData.get('reportingManager') as string || undefined,
-      workLocation: formData.get('workLocation') as string || undefined,
-      bankName: formData.get('bankName') as string || undefined,
-      accountNumber: formData.get('accountNumber') as string || undefined,
-      ifscCode: formData.get('ifscCode') as string || undefined,
-      branch: formData.get('branch') as string || undefined,
-      panNumber: formData.get('panNumber') as string || undefined,
-      city: formData.get('city') as string || undefined,
-      state: formData.get('state') as string || undefined,
-      postalCode: formData.get('postalCode') as string || undefined,
-      address: formData.get('address') as string || undefined,
-      emergencyContactName: formData.get('emergencyContactName') as string || undefined,
-      emergencyRelationship: formData.get('emergencyRelationship') as string || undefined,
-      emergencyPhoneNumber: formData.get('emergencyPhoneNumber') as string || undefined,
-      emergencyAlternatePhone: formData.get('emergencyAlternatePhone') as string || undefined,
-      documentsSubmitted: documents.join(', ') || undefined,
+      employeeId: formData.employeeId.trim(),
+      gender: formData.gender || undefined,
+      dateOfBirth: formData.dateOfBirth || undefined,
+      nationality: formData.nationality || undefined,
+      maritalStatus: formData.maritalStatus || undefined,
+      department: formData.department || undefined,
+      designation: formData.designation || undefined,
+      dateOfJoining: formData.dateOfJoining || undefined,
+      employmentType: formData.employmentType || undefined,
+      reportingManager: formData.reportingManager || undefined,
+      workLocation: formData.workLocation || undefined,
+      bankName: formData.bankName || undefined,
+      accountNumber: formData.accountNumber || undefined,
+      ifscCode: formData.ifscCode || undefined,
+      branch: formData.branch || undefined,
+      panNumber: formData.panNumber || undefined,
+      city: formData.city || undefined,
+      state: formData.state || undefined,
+      postalCode: formData.postalCode || undefined,
+      address: formData.address || undefined,
+      emergencyContactName: formData.emergencyContactName || undefined,
+      emergencyRelationship: formData.emergencyRelationship || undefined,
+      emergencyPhoneNumber: formData.emergencyPhoneNumber || undefined,
+      emergencyAlternatePhone: formData.emergencyAlternatePhone || undefined,
+      documentsSubmitted: formData.documents.length > 0 ? formData.documents.join(', ') : undefined,
     };
 
     createEmployeeProfileMutation.mutate(data);
@@ -117,12 +261,16 @@ export const EmployeeRegistration: React.FC = () => {
 
   const nextStep = () => {
     if (currentStep < totalSteps) {
+      // Save current step data before moving forward
+      saveCurrentStepData(currentStep);
       setCurrentStep(currentStep + 1);
     }
   };
 
   const prevStep = () => {
     if (currentStep > 1) {
+      // Save current step data before moving backward
+      saveCurrentStepData(currentStep);
       setCurrentStep(currentStep - 1);
     }
   };
@@ -262,6 +410,8 @@ export const EmployeeRegistration: React.FC = () => {
                         type="text"
                         name="employeeId"
                         required
+                        value={formData.employeeId}
+                        onChange={handleInputChange}
                         placeholder="e.g., EMP001"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
@@ -272,15 +422,36 @@ export const EmployeeRegistration: React.FC = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
                         <div className="flex gap-4 mt-2">
                           <label className="flex items-center">
-                            <input type="radio" name="gender" value="male" className="mr-2" />
+                            <input 
+                              type="radio" 
+                              name="gender" 
+                              value="Male" 
+                              checked={formData.gender === 'Male'}
+                              onChange={(e) => handleRadioChange('gender', e.target.value)}
+                              className="mr-2" 
+                            />
                             <span>Male</span>
                           </label>
                           <label className="flex items-center">
-                            <input type="radio" name="gender" value="female" className="mr-2" />
+                            <input 
+                              type="radio" 
+                              name="gender" 
+                              value="Female" 
+                              checked={formData.gender === 'Female'}
+                              onChange={(e) => handleRadioChange('gender', e.target.value)}
+                              className="mr-2" 
+                            />
                             <span>Female</span>
                           </label>
                           <label className="flex items-center">
-                            <input type="radio" name="gender" value="other" className="mr-2" />
+                            <input 
+                              type="radio" 
+                              name="gender" 
+                              value="Other" 
+                              checked={formData.gender === 'Other'}
+                              onChange={(e) => handleRadioChange('gender', e.target.value)}
+                              className="mr-2" 
+                            />
                             <span>Other</span>
                           </label>
                         </div>
@@ -291,6 +462,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="date"
                           name="dateOfBirth"
+                          value={formData.dateOfBirth}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -302,6 +475,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="nationality"
+                          value={formData.nationality}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -310,15 +485,36 @@ export const EmployeeRegistration: React.FC = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Marital Status</label>
                         <div className="flex gap-4 mt-2">
                           <label className="flex items-center">
-                            <input type="radio" name="maritalStatus" value="single" className="mr-2" />
+                            <input 
+                              type="radio" 
+                              name="maritalStatus" 
+                              value="Single" 
+                              checked={formData.maritalStatus === 'Single'}
+                              onChange={(e) => handleRadioChange('maritalStatus', e.target.value)}
+                              className="mr-2" 
+                            />
                             <span>Single</span>
                           </label>
                           <label className="flex items-center">
-                            <input type="radio" name="maritalStatus" value="married" className="mr-2" />
+                            <input 
+                              type="radio" 
+                              name="maritalStatus" 
+                              value="Married" 
+                              checked={formData.maritalStatus === 'Married'}
+                              onChange={(e) => handleRadioChange('maritalStatus', e.target.value)}
+                              className="mr-2" 
+                            />
                             <span>Married</span>
                           </label>
                           <label className="flex items-center">
-                            <input type="radio" name="maritalStatus" value="other" className="mr-2" />
+                            <input 
+                              type="radio" 
+                              name="maritalStatus" 
+                              value="Other" 
+                              checked={formData.maritalStatus === 'Other'}
+                              onChange={(e) => handleRadioChange('maritalStatus', e.target.value)}
+                              className="mr-2" 
+                            />
                             <span>Other</span>
                           </label>
                         </div>
@@ -330,6 +526,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <textarea
                         name="address"
                         rows={3}
+                        value={formData.address}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -340,6 +538,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="city"
+                          value={formData.city}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -349,6 +549,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="state"
+                          value={formData.state}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -358,6 +560,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="postalCode"
+                          value={formData.postalCode}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -376,6 +580,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="department"
+                          value={formData.department}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -385,6 +591,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="designation"
+                          value={formData.designation}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -395,6 +603,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="date"
                         name="dateOfJoining"
+                        value={formData.dateOfJoining}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -403,19 +613,47 @@ export const EmployeeRegistration: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
                         <label className="flex items-center">
-                          <input type="radio" name="employmentType" value="full-time" className="mr-2" />
+                          <input 
+                            type="radio" 
+                            name="employmentType" 
+                            value="Full-Time" 
+                            checked={formData.employmentType === 'Full-Time'}
+                            onChange={(e) => handleRadioChange('employmentType', e.target.value)}
+                            className="mr-2" 
+                          />
                           <span>Full-Time</span>
                         </label>
                         <label className="flex items-center">
-                          <input type="radio" name="employmentType" value="part-time" className="mr-2" />
+                          <input 
+                            type="radio" 
+                            name="employmentType" 
+                            value="Part-Time" 
+                            checked={formData.employmentType === 'Part-Time'}
+                            onChange={(e) => handleRadioChange('employmentType', e.target.value)}
+                            className="mr-2" 
+                          />
                           <span>Part-Time</span>
                         </label>
                         <label className="flex items-center">
-                          <input type="radio" name="employmentType" value="contract" className="mr-2" />
+                          <input 
+                            type="radio" 
+                            name="employmentType" 
+                            value="Contract" 
+                            checked={formData.employmentType === 'Contract'}
+                            onChange={(e) => handleRadioChange('employmentType', e.target.value)}
+                            className="mr-2" 
+                          />
                           <span>Contract</span>
                         </label>
                         <label className="flex items-center">
-                          <input type="radio" name="employmentType" value="intern" className="mr-2" />
+                          <input 
+                            type="radio" 
+                            name="employmentType" 
+                            value="Intern" 
+                            checked={formData.employmentType === 'Intern'}
+                            onChange={(e) => handleRadioChange('employmentType', e.target.value)}
+                            className="mr-2" 
+                          />
                           <span>Intern</span>
                         </label>
                       </div>
@@ -427,6 +665,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="reportingManager"
+                          value={formData.reportingManager}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -436,6 +676,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="text"
                           name="workLocation"
+                          value={formData.workLocation}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -453,6 +695,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="text"
                         name="bankName"
+                        value={formData.bankName}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -462,6 +706,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="text"
                         name="accountNumber"
+                        value={formData.accountNumber}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -471,6 +717,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="text"
                         name="ifscCode"
+                        value={formData.ifscCode}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -480,6 +728,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="text"
                         name="branch"
+                        value={formData.branch}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -490,6 +740,8 @@ export const EmployeeRegistration: React.FC = () => {
                         type="text"
                         name="panNumber"
                         maxLength={10}
+                        value={formData.panNumber}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -506,6 +758,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="text"
                         name="emergencyContactName"
+                        value={formData.emergencyContactName}
+                        onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
@@ -515,6 +769,8 @@ export const EmployeeRegistration: React.FC = () => {
                       <input
                         type="text"
                         name="emergencyRelationship"
+                        value={formData.emergencyRelationship}
+                        onChange={handleInputChange}
                         placeholder="e.g., Father, Mother, Spouse, Guardian"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
@@ -526,6 +782,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="tel"
                           name="emergencyPhoneNumber"
+                          value={formData.emergencyPhoneNumber}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -535,6 +793,8 @@ export const EmployeeRegistration: React.FC = () => {
                         <input
                           type="tel"
                           name="emergencyAlternatePhone"
+                          value={formData.emergencyAlternatePhone}
+                          onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -563,6 +823,8 @@ export const EmployeeRegistration: React.FC = () => {
                               type="checkbox"
                               name="documents"
                               value={doc}
+                              checked={formData.documents.includes(doc)}
+                              onChange={(e) => handleDocumentChange(doc, e.target.checked)}
                               className="mr-2"
                             />
                             <span>{doc}</span>

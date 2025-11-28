@@ -8,6 +8,7 @@ import { BatchExtensionManagement } from './pages/BatchExtensionManagement';
 import { LeaveManagement } from './pages/LeaveManagement';
 import { BatchManagement } from './pages/BatchManagement';
 import { BatchCreate } from './pages/BatchCreate';
+import { BatchDetails } from './pages/BatchDetails';
 import { FacultyManagement } from './pages/FacultyManagement';
 import { FacultyEdit } from './pages/FacultyEdit';
 import { StudentManagement } from './pages/StudentManagement';
@@ -19,13 +20,15 @@ import { EmployeeEdit } from './pages/EmployeeEdit';
 import { FacultyRegistration } from './pages/FacultyRegistration';
 import { SessionManagement } from './pages/SessionManagement';
 import { AttendanceManagement } from './pages/AttendanceManagement';
-import { StudentAttendance } from './pages/StudentAttendance';
+import { UnifiedAttendance } from './pages/UnifiedAttendance';
 import { PaymentManagement } from './pages/PaymentManagement';
 import { PortfolioManagement } from './pages/PortfolioManagement';
 import { ReportManagement } from './pages/ReportManagement';
 import { ApprovalManagement } from './pages/ApprovalManagement';
 import { UserManagement } from './pages/UserManagement';
 import { RoleManagement } from './pages/RoleManagement';
+import { CertificateManagement } from './pages/CertificateManagement';
+import { BiometricSettings } from './pages/BiometricSettings';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -95,6 +98,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <BatchCreate />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/batches/:id"
+        element={
+          <ProtectedRoute>
+            <BatchDetails />
           </ProtectedRoute>
         }
       />
@@ -187,10 +198,10 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/student-attendance"
+        path="/my-attendance"
         element={
           <ProtectedRoute>
-            <StudentAttendance />
+            <UnifiedAttendance />
           </ProtectedRoute>
         }
       />
@@ -255,6 +266,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <RoleManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/certificates"
+        element={
+          <ProtectedRoute>
+            <CertificateManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/biometric-settings"
+        element={
+          <ProtectedRoute>
+            <BiometricSettings />
           </ProtectedRoute>
         }
       />

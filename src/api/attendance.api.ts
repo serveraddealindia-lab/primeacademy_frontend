@@ -28,8 +28,9 @@ export interface MarkAttendanceRequest {
   isManual?: boolean;
 }
 
-export interface PunchInRequest {
+interface PunchPayloadBase {
   photo?: string;
+  photoFile?: File | Blob;
   fingerprint?: string;
   location?: {
     latitude?: number;
@@ -38,15 +39,8 @@ export interface PunchInRequest {
   };
 }
 
-export interface PunchOutRequest {
-  photo?: string;
-  fingerprint?: string;
-  location?: {
-    latitude?: number;
-    longitude?: number;
-    address?: string;
-  };
-}
+export type PunchInRequest = PunchPayloadBase;
+export type PunchOutRequest = PunchPayloadBase;
 
 export interface StudentPunch {
   id: number;
@@ -60,7 +54,9 @@ export interface StudentPunch {
   punchOutFingerprint?: string;
   punchInLocation?: any;
   punchOutLocation?: any;
-  effectiveHours?: number;
+  effectiveWorkingHours?: number;
+  effectiveHours?: number; // Keep for backward compatibility
+  breaks?: Array<{ startTime?: string; endTime?: string; reason?: string }> | string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -99,6 +95,47 @@ export interface AttendancesResponse {
   };
 }
 
+const buildPunchFormData = (data: PunchPayloadBase): FormData => {
+  const formData = new FormData();
+
+  // Handle photo - convert base64 to Blob if needed (optional)
+  if (data.photoFile) {
+    formData.append('photo', data.photoFile);
+  } else if (data.photo) {
+    // If photo is a base64 string, convert it to a Blob
+    if (typeof data.photo === 'string' && data.photo.startsWith('data:')) {
+      // Extract base64 data
+      const arr = data.photo.split(',');
+      const mimeMatch = arr[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], { type: mime });
+      formData.append('photo', blob, `attendance-${Date.now()}.jpg`);
+    } else {
+      // If it's already a string (not base64), send it as body.photo
+      formData.append('photo', data.photo);
+    }
+  }
+  // Photo is optional - if not provided, FormData will be sent without it
+
+  // Fingerprint is optional
+  if (data.fingerprint) {
+    formData.append('fingerprint', data.fingerprint);
+  }
+
+  // Location is optional
+  if (data.location) {
+    formData.append('location', JSON.stringify(data.location));
+  }
+
+  return formData;
+};
+
 export const attendanceAPI = {
   getSessionAttendance: async (sessionId: number): Promise<AttendancesResponse> => {
     const response = await api.get<AttendancesResponse>(`/sessions/${sessionId}/attendance`);
@@ -114,11 +151,15 @@ export const attendanceAPI = {
   },
   // Student Punch In/Out
   punchIn: async (data: PunchInRequest): Promise<PunchResponse> => {
-    const response = await api.post<PunchResponse>('/student-attendance/punch-in', data);
+    const response = await api.post<PunchResponse>('/student-attendance/punch-in', buildPunchFormData(data), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
   punchOut: async (data: PunchOutRequest): Promise<PunchResponse> => {
-    const response = await api.post<PunchResponse>('/student-attendance/punch-out', data);
+    const response = await api.post<PunchResponse>('/student-attendance/punch-out', buildPunchFormData(data), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
   getTodayPunch: async (): Promise<TodayPunchResponse> => {
@@ -127,6 +168,15 @@ export const attendanceAPI = {
   },
   getStudentPunchHistory: async (params?: { from?: string; to?: string }): Promise<{ status: string; data: { punches: StudentPunch[] } }> => {
     const response = await api.get('/student-attendance/history', { params });
+    return response.data;
+  },
+  // Break In/Out
+  breakIn: async (reason?: string): Promise<{ status: string; message: string; data: any }> => {
+    const response = await api.post('/student-attendance/break-in', { reason });
+    return response.data;
+  },
+  breakOut: async (): Promise<{ status: string; message: string; data: any }> => {
+    const response = await api.post('/student-attendance/break-out');
     return response.data;
   },
 };
