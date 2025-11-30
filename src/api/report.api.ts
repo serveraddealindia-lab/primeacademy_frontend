@@ -165,9 +165,94 @@ export interface AllAnalysisReport {
   generatedAt: string;
 }
 
+export interface StudentsEnrolledBatchNotStarted {
+  students: Array<{
+    id: number;
+    name: string;
+    email: string;
+    phone?: string;
+    avatarUrl?: string;
+    enrollmentId: number;
+    enrollmentDate: string;
+    batch: {
+      id: number;
+      title: string;
+      software?: string | null;
+      mode: string;
+      startDate: string;
+      endDate: string;
+      status?: string | null;
+      schedule?: Record<string, unknown> | null;
+    };
+  }>;
+  totalCount: number;
+}
+
+export interface StudentsMultipleCoursesConflict {
+  students: Array<{
+    id: number;
+    name: string;
+    email: string;
+    phone?: string;
+    avatarUrl?: string;
+    batches: Array<{
+      id: number;
+      title: string;
+      software?: string | null;
+      mode: string;
+      startDate: string;
+      endDate: string;
+      status?: string | null;
+      schedule?: Record<string, unknown> | null;
+      enrollmentId: number;
+      enrollmentDate: string;
+    }>;
+    runningBatches: number;
+    futureBatches: number;
+    hasTimeConflict: boolean;
+    totalEnrollments: number;
+  }>;
+  totalCount: number;
+}
+
+export interface StudentsOnLeavePendingBatches {
+  students: Array<{
+    id: number;
+    name: string;
+    email: string;
+    phone?: string;
+    avatarUrl?: string;
+    leaves: Array<{
+      id: number;
+      batchId: number;
+      batchTitle: string;
+      startDate: string;
+      endDate: string;
+      reason?: string | null;
+      status: string;
+    }>;
+    pendingBatches: Array<{
+      id: number;
+      title: string;
+      software?: string | null;
+      mode: string;
+      startDate: string;
+      endDate: string;
+      status?: string | null;
+      schedule?: Record<string, unknown> | null;
+      enrollmentId: number;
+      enrollmentDate: string;
+      isRunning: boolean;
+    }>;
+    totalLeaves: number;
+    totalPendingBatches: number;
+  }>;
+  totalCount: number;
+}
+
 export const reportAPI = {
   getStudentsWithoutBatch: async (): Promise<{ status: string; data: StudentsWithoutBatchReport }> => {
-    const response = await api.get('/reports/students-without-batch');
+    const response = await api.get('/attendance-reports/students-without-batch');
     return response.data;
   },
   getBatchAttendance: async (batchId: number, params?: { from?: string; to?: string }): Promise<{ status: string; data: BatchAttendanceReport }> => {
@@ -184,6 +269,18 @@ export const reportAPI = {
   },
   getAllAnalysisReports: async (): Promise<{ status: string; data: AllAnalysisReport }> => {
     const response = await api.get('/reports/all-analysis');
+    return response.data;
+  },
+  getStudentsEnrolledBatchNotStarted: async (): Promise<{ status: string; data: StudentsEnrolledBatchNotStarted }> => {
+    const response = await api.get('/attendance-reports/students-enrolled-batch-not-started');
+    return response.data;
+  },
+  getStudentsMultipleCoursesConflict: async (): Promise<{ status: string; data: StudentsMultipleCoursesConflict }> => {
+    const response = await api.get('/attendance-reports/students-multiple-courses-conflict');
+    return response.data;
+  },
+  getStudentsOnLeavePendingBatches: async (): Promise<{ status: string; data: StudentsOnLeavePendingBatches }> => {
+    const response = await api.get('/attendance-reports/students-on-leave-pending-batches');
     return response.data;
   },
 };

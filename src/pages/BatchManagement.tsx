@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout';
 import { batchAPI, Batch, UpdateBatchRequest } from '../api/batch.api';
 import { facultyAPI } from '../api/faculty.api';
 import { studentAPI } from '../api/student.api';
+import { reportAPI } from '../api/report.api';
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -26,6 +27,7 @@ export const BatchManagement: React.FC = () => {
   const [selectedFaculty, setSelectedFaculty] = useState<number[]>([]);
   const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
   const [isLoadingEditBatch, setIsLoadingEditBatch] = useState(false);
+  const [activeTab, setActiveTab] = useState<'batches' | 'available-students' | 'enrolled-not-started' | 'multiple-courses' | 'on-leave'>('batches');
 
   // Fetch batches
   const { data: batchesData, isLoading } = useQuery({
@@ -43,6 +45,34 @@ export const BatchManagement: React.FC = () => {
   const { data: studentsData, isLoading: isLoadingStudents } = useQuery({
     queryKey: ['students'],
     queryFn: () => studentAPI.getAllStudents(),
+  });
+
+  // Fetch students without batch
+  const { data: availableStudentsData, isLoading: isLoadingAvailableStudents } = useQuery({
+    queryKey: ['students-without-batch'],
+    queryFn: () => reportAPI.getStudentsWithoutBatch(),
+    enabled: activeTab === 'available-students',
+  });
+
+  // Fetch students enrolled but batch not started
+  const { data: enrolledNotStartedData, isLoading: isLoadingEnrolledNotStarted } = useQuery({
+    queryKey: ['students-enrolled-batch-not-started'],
+    queryFn: () => reportAPI.getStudentsEnrolledBatchNotStarted(),
+    enabled: activeTab === 'enrolled-not-started',
+  });
+
+  // Fetch students with multiple courses conflict
+  const { data: multipleCoursesData, isLoading: isLoadingMultipleCourses } = useQuery({
+    queryKey: ['students-multiple-courses-conflict'],
+    queryFn: () => reportAPI.getStudentsMultipleCoursesConflict(),
+    enabled: activeTab === 'multiple-courses',
+  });
+
+  // Fetch students on leave with pending batches
+  const { data: onLeaveData, isLoading: isLoadingOnLeave } = useQuery({
+    queryKey: ['students-on-leave-pending-batches'],
+    queryFn: () => reportAPI.getStudentsOnLeavePendingBatches(),
+    enabled: activeTab === 'on-leave',
   });
 
   const fetchBatchDetails = async (batchId: number): Promise<Batch> => {
@@ -82,6 +112,103 @@ export const BatchManagement: React.FC = () => {
   });
 
   const batches = batchesData?.data || [];
+
+  const handleDownloadBatchesCSV = () => {
+    if (batches.length === 0) {
+      alert('No batches to export');
+      return;
+    }
+
+    // CSV Headers
+    const headers = [
+      'Batch ID',
+      'Title',
+      'Software',
+      'Mode',
+      'Schedule',
+      'Start Date',
+      'End Date',
+      'Duration (Days)',
+      'Status',
+      'Capacity',
+      'Enrolled Students',
+      'Student Names',
+      'Student Emails',
+      'Faculty Count',
+      'Faculty Names',
+      'Created Date'
+    ];
+
+    // CSV Rows
+    const rows = batches.map((batch) => {
+      const startDate = new Date(batch.startDate);
+      const endDate = new Date(batch.endDate);
+      const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isCompleted = endDate < today;
+      const isOngoing = startDate <= today && endDate >= today;
+      const status = isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Upcoming';
+      
+      const facultyNames = batch.assignedFaculty && batch.assignedFaculty.length > 0
+        ? batch.assignedFaculty.map((f: any) => f.name).join('; ')
+        : '-';
+
+      const studentNames = batch.enrollments && batch.enrollments.length > 0
+        ? batch.enrollments.map((enrollment: any) => {
+            return enrollment.student?.name || enrollment.name || 'Unknown';
+          }).join('; ')
+        : '-';
+
+      const studentEmails = batch.enrollments && batch.enrollments.length > 0
+        ? batch.enrollments.map((enrollment: any) => {
+            return enrollment.student?.email || enrollment.email || '';
+          }).filter((email: string) => email).join('; ')
+        : '-';
+
+      const scheduleText = batch.schedule && Object.keys(batch.schedule).length > 0
+        ? Object.entries(batch.schedule).map(([day, times]: [string, any]) => 
+            `${day}: ${times.startTime}-${times.endTime}`
+          ).join('; ')
+        : '-';
+
+      return [
+        batch.id,
+        batch.title || '',
+        batch.software || '',
+        batch.mode || '',
+        scheduleText,
+        startDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        durationDays,
+        status,
+        batch.maxCapacity || '',
+        batch.enrollments?.length || 0,
+        studentNames,
+        studentEmails,
+        batch.assignedFaculty?.length || 0,
+        facultyNames,
+        batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : ''
+      ];
+    });
+
+    // Create CSV content
+    const csvContent = [
+      headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','),
+      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `batches_export_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // Unused function - kept for future use
   /*
@@ -283,18 +410,88 @@ export const BatchManagement: React.FC = () => {
                 <h1 className="text-3xl font-bold text-white">Batch Management</h1>
                 <p className="mt-2 text-orange-100">Manage training batches</p>
               </div>
-              {(user?.role === 'admin' || user?.role === 'superadmin') && (
-                <button
-                  onClick={() => navigate('/batches/create')}
-                  className="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
-                >
-                  + Create Batch
-                </button>
-              )}
+              <div className="flex gap-3">
+                {batches.length > 0 && (
+                  <button
+                    onClick={handleDownloadBatchesCSV}
+                    className="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center gap-2"
+                    title="Download all batches as CSV"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Download CSV
+                  </button>
+                )}
+                {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                  <button
+                    onClick={() => navigate('/batches/create')}
+                    className="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
+                  >
+                    + Create Batch
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="p-6">
+            {/* Tabs */}
+            <div className="mb-6 border-b border-gray-200">
+              <nav className="-mb-px flex space-x-4 overflow-x-auto">
+                <button
+                  onClick={() => setActiveTab('batches')}
+                  className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    activeTab === 'batches'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  All Batches ({batches.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('available-students')}
+                  className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    activeTab === 'available-students'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Available Students ({availableStudentsData?.data.totalCount || 0})
+                </button>
+                <button
+                  onClick={() => setActiveTab('enrolled-not-started')}
+                  className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    activeTab === 'enrolled-not-started'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Enrolled - Batch Not Started ({enrolledNotStartedData?.data.totalCount || 0})
+                </button>
+                <button
+                  onClick={() => setActiveTab('multiple-courses')}
+                  className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    activeTab === 'multiple-courses'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Multiple Courses Conflict ({multipleCoursesData?.data.totalCount || 0})
+                </button>
+                <button
+                  onClick={() => setActiveTab('on-leave')}
+                  className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                    activeTab === 'on-leave'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  On Leave - Pending Batches ({onLeaveData?.data.totalCount || 0})
+                </button>
+              </nav>
+            </div>
+
             {isLoadingEditBatch && (
               <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-lg flex items-center gap-2">
                 <svg className="w-4 h-4 animate-spin text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -304,81 +501,538 @@ export const BatchManagement: React.FC = () => {
                 <span>Loading batch details...</span>
               </div>
             )}
-            {batches.length === 0 ? (
+
+            {activeTab === 'batches' && (
+              <>
+                {batches.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500 text-lg">No batches found</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {batches.map((batch) => (
-                  <div key={batch.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">{batch.title}</h3>
-                    {batch.software && (
-                      <p className="text-sm text-gray-600 mb-2">
-                        <span className="font-medium">Software:</span> {batch.software}
-                      </p>
-                    )}
-                    <p className="text-sm text-gray-600 mb-2">
-                      <span className="font-medium">Mode:</span> {batch.mode}
-                    </p>
-                    <p className="text-sm text-gray-600 mb-2">
-                      <span className="font-medium">Start:</span> {new Date(batch.startDate).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm text-gray-600 mb-2">
-                      <span className="font-medium">End:</span> {new Date(batch.endDate).toLocaleDateString()}
-                    </p>
-                    {batch.maxCapacity && (
-                      <p className="text-sm text-gray-600 mb-2">
-                        <span className="font-medium">Capacity:</span> {batch.maxCapacity}
-                      </p>
-                    )}
-                    {batch.status && (
-                      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                        batch.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {batch.status}
-                      </span>
-                    )}
-                    <div className="mt-4 flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => handleView(batch)}
-                        disabled={isLoadingEditBatch}
-                        className={`px-3 py-1 bg-blue-500 text-white rounded text-sm transition-colors ${
-                          isLoadingEditBatch
-                            ? 'opacity-60 cursor-not-allowed'
-                            : 'hover:bg-blue-600'
-                        }`}
-                        title="View Batch"
-                      >
-                        👁️ View
-                      </button>
-                      {(user?.role === 'admin' || user?.role === 'superadmin') && (
-                        <>
-                          <button
-                            onClick={() => handleEdit(batch)}
-                            disabled={isLoadingEditBatch}
-                            className={`px-3 py-1 bg-orange-500 text-white rounded text-sm transition-colors ${
-                              isLoadingEditBatch
-                                ? 'opacity-60 cursor-not-allowed'
-                                : 'hover:bg-orange-600'
-                            }`}
-                            title="Edit Batch"
-                          >
-                            {isLoadingEditBatch ? 'Loading...' : '✏️ Edit'}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(batch)}
-                            className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors"
-                            title="Delete Batch"
-                          >
-                            🗑️ Delete
-                          </button>
-                        </>
-                      )}
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Batch Title
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Software
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Mode
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Schedule/Time
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Start Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        End Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Duration
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Capacity
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Students
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {batches.map((batch) => {
+                      const startDate = new Date(batch.startDate);
+                      const endDate = new Date(batch.endDate);
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const daysRemaining = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                      const isCompleted = endDate < today;
+                      const isOngoing = startDate <= today && endDate >= today;
+                      const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                      
+                      return (
+                        <tr key={batch.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{batch.title}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">{batch.software || '-'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500 capitalize">{batch.mode || '-'}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {batch.schedule && Object.keys(batch.schedule).length > 0 ? (
+                              <div className="text-xs text-gray-600 space-y-1 max-w-xs">
+                                {Object.entries(batch.schedule).slice(0, 3).map(([day, times]: [string, any]) => (
+                                  <div key={day} className="truncate">
+                                    {day.substring(0, 3)}: {times.startTime} - {times.endTime}
+                                  </div>
+                                ))}
+                                {Object.keys(batch.schedule).length > 3 && (
+                                  <div className="text-gray-500 italic">
+                                    + {Object.keys(batch.schedule).length - 3} more days
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-400">No schedule</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {startDate.toLocaleDateString('en-US', { 
+                                year: 'numeric', 
+                                month: 'short', 
+                                day: 'numeric' 
+                              })}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {startDate.toLocaleDateString('en-US', { weekday: 'short' })}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {endDate.toLocaleDateString('en-US', { 
+                                year: 'numeric', 
+                                month: 'short', 
+                                day: 'numeric' 
+                              })}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {endDate.toLocaleDateString('en-US', { weekday: 'short' })}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">
+                              {durationDays} {durationDays === 1 ? 'day' : 'days'}
+                            </div>
+                            {isOngoing && (
+                              <div className="text-xs text-blue-600 font-medium">
+                                {daysRemaining > 0 ? `${daysRemaining} days left` : 'Ends today'}
+                              </div>
+                            )}
+                            {isCompleted && (
+                              <div className="text-xs text-gray-500">
+                                Completed
+                              </div>
+                            )}
+                            {!isOngoing && !isCompleted && (
+                              <div className="text-xs text-orange-600 font-medium">
+                                Starts in {Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              isCompleted 
+                                ? 'bg-gray-100 text-gray-800' 
+                                : isOngoing 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Upcoming'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">
+                              {batch.enrollments?.length || 0} / {batch.maxCapacity || '-'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {batch.enrollments && batch.enrollments.length > 0 ? (
+                              <div className="max-w-xs">
+                                <div className="text-sm text-gray-900 font-medium mb-1">
+                                  {batch.enrollments.length} student{batch.enrollments.length !== 1 ? 's' : ''}
+                                </div>
+                                <div className="text-xs text-gray-600 space-y-1">
+                                  {batch.enrollments.slice(0, 3).map((enrollment: any, idx: number) => {
+                                    const studentName = enrollment.student?.name || enrollment.name || `Student ${idx + 1}`;
+                                    const studentEmail = enrollment.student?.email || enrollment.email || '';
+                                    return (
+                                      <div key={enrollment.id || enrollment.student?.id || idx} className="truncate" title={`${studentName}${studentEmail ? ` (${studentEmail})` : ''}`}>
+                                        • {studentName}
+                                      </div>
+                                    );
+                                  })}
+                                  {batch.enrollments.length > 3 && (
+                                    <div className="text-gray-500 italic">
+                                      + {batch.enrollments.length - 3} more
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-400">No students enrolled</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleView(batch)}
+                                disabled={isLoadingEditBatch}
+                                className={`px-3 py-1 bg-blue-500 text-white rounded text-xs transition-colors ${
+                                  isLoadingEditBatch
+                                    ? 'opacity-60 cursor-not-allowed'
+                                    : 'hover:bg-blue-600'
+                                }`}
+                                title="View Batch"
+                              >
+                                View
+                              </button>
+                              {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(batch)}
+                                    disabled={isLoadingEditBatch}
+                                    className={`px-3 py-1 bg-orange-500 text-white rounded text-xs transition-colors ${
+                                      isLoadingEditBatch
+                                        ? 'opacity-60 cursor-not-allowed'
+                                        : 'hover:bg-orange-600'
+                                    }`}
+                                    title="Edit Batch"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(batch)}
+                                    className="px-3 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
+                                    title="Delete Batch"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'available-students' && (
+              <>
+                {isLoadingAvailableStudents ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                    <p className="mt-4 text-gray-500">Loading available students...</p>
+                  </div>
+                ) : availableStudentsData?.data.students.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">All students are enrolled in batches</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Name
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Email
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Phone
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Previous Enrollments
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Registered Date
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {availableStudentsData?.data.students.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.phone || '-'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              {student.enrollments && student.enrollments.length > 0 ? (
+                                <div className="text-xs text-gray-600">
+                                  {student.enrollments.map((enrollment: any, idx: number) => {
+                                    const batch = enrollment.batch;
+                                    if (!batch) return null;
+                                    return (
+                                      <div key={idx} className="mb-1">
+                                        {batch.title} ({batch.status || 'ended'})
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-400">No previous enrollments</div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">
+                                {student.createdAt ? new Date(student.createdAt).toLocaleDateString() : '-'}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-4 text-sm text-gray-600">
+                      Total: {availableStudentsData?.data.totalCount || 0} students available for enrollment
                     </div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'enrolled-not-started' && (
+              <>
+                {isLoadingEnrolledNotStarted ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                    <p className="mt-4 text-gray-500">Loading students...</p>
+                  </div>
+                ) : enrolledNotStartedData?.data.students.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No students found enrolled in batches that haven't started yet</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        <strong>Note:</strong> These students are enrolled but their batch start date is in the future. They are waiting for their batch to begin.
+                      </p>
+                    </div>
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batch Start Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enrollment Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {enrolledNotStartedData?.data.students.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.phone || '-'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-medium text-gray-900">{student.batch.title}</div>
+                              <div className="text-xs text-gray-500">{student.batch.software || 'N/A'} • {student.batch.mode}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">{new Date(student.batch.startDate).toLocaleDateString()}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{new Date(student.enrollmentDate).toLocaleDateString()}</div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-4 text-sm text-gray-600">
+                      Total: {enrolledNotStartedData?.data.totalCount || 0} students waiting for batch to start
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'multiple-courses' && (
+              <>
+                {isLoadingMultipleCourses ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                    <p className="mt-4 text-gray-500">Loading students...</p>
+                  </div>
+                ) : multipleCoursesData?.data.students.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No students found with multiple course enrollments</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Note:</strong> These students are enrolled in 2 or more courses. Some may have time conflicts or overlapping schedules.
+                      </p>
+                    </div>
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Enrollments</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Running Batches</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Future Batches</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time Conflict</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Batches</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {multipleCoursesData?.data.students.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{student.totalEnrollments}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                                {student.runningBatches}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                                {student.futureBatches}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {student.hasTimeConflict ? (
+                                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">Yes</span>
+                              ) : (
+                                <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">No</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-xs space-y-1 max-w-md">
+                                {student.batches.map((batch, idx) => (
+                                  <div key={batch.id || idx} className="p-2 bg-gray-50 rounded border border-gray-200">
+                                    <div className="font-medium text-gray-900">{batch.title}</div>
+                                    <div className="text-gray-600">{batch.software || 'N/A'} • {batch.mode}</div>
+                                    <div className="text-gray-500 text-xs mt-1">
+                                      {new Date(batch.startDate).toLocaleDateString()} - {new Date(batch.endDate).toLocaleDateString()}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-4 text-sm text-gray-600">
+                      Total: {multipleCoursesData?.data.totalCount || 0} students with multiple course enrollments
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'on-leave' && (
+              <>
+                {isLoadingOnLeave ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                    <p className="mt-4 text-gray-500">Loading students...</p>
+                  </div>
+                ) : onLeaveData?.data.students.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No students found on leave with pending batches</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-sm text-orange-800">
+                        <strong>Note:</strong> These students are on approved leave but have other batches that need to be allocated or are currently running.
+                      </p>
+                    </div>
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leaves</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pending Batches</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {onLeaveData?.data.students.map((student) => (
+                          <tr key={student.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{student.phone || '-'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-xs space-y-1 max-w-xs">
+                                {student.leaves.map((leave) => (
+                                  <div key={leave.id} className="p-2 bg-blue-50 rounded border border-blue-200">
+                                    <div className="font-medium text-gray-900">{leave.batchTitle}</div>
+                                    <div className="text-gray-600 text-xs">
+                                      {new Date(leave.startDate).toLocaleDateString()} - {new Date(leave.endDate).toLocaleDateString()}
+                                    </div>
+                                    {leave.reason && (
+                                      <div className="text-gray-500 text-xs mt-1">Reason: {leave.reason}</div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-xs space-y-1 max-w-md">
+                                {student.pendingBatches.map((batch) => (
+                                  <div key={batch.id} className={`p-2 rounded border ${batch.isRunning ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                                    <div className="font-medium text-gray-900">{batch.title}</div>
+                                    <div className="text-gray-600">{batch.software || 'N/A'} • {batch.mode}</div>
+                                    <div className="text-gray-500 text-xs mt-1">
+                                      {new Date(batch.startDate).toLocaleDateString()} - {new Date(batch.endDate).toLocaleDateString()}
+                                    </div>
+                                    {batch.isRunning && (
+                                      <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
+                                        Currently Running
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-4 text-sm text-gray-600">
+                      Total: {onLeaveData?.data.totalCount || 0} students on leave with pending batches
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

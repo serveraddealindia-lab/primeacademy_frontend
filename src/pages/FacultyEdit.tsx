@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { facultyAPI } from '../api/faculty.api';
 import { userAPI, UpdateUserRequest } from '../api/user.api';
+import { uploadAPI } from '../api/upload.api';
+import { getImageUrl } from '../utils/imageUtils';
 import api from '../api/axios';
 
 export const FacultyEdit: React.FC = () => {
@@ -12,6 +14,8 @@ export const FacultyEdit: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Fetch faculty data
   const { data: facultyData, isLoading } = useQuery({
@@ -143,6 +147,79 @@ export const FacultyEdit: React.FC = () => {
 
           <div className="p-8">
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Profile Photo */}
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold mb-6">Profile Photo</h2>
+                <div className="flex items-center gap-6">
+                  {imagePreview || facultyData.avatarUrl ? (
+                    <img
+                      src={getImageUrl(imagePreview || facultyData.avatarUrl || '') || ''}
+                      alt={facultyData.name}
+                      className="w-32 h-32 rounded-full object-cover border-4 border-orange-500"
+                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY5NTAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPnt7ZmFjdWx0eURhdGEubmFtZS5jaGFyQXQoMCl9fTwvdGV4dD48L3N2Zz4=';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-32 h-32 rounded-full bg-gray-300 border-4 border-orange-500 flex items-center justify-center">
+                      <span className="text-4xl text-gray-600">👤</span>
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        if (!file.type.startsWith('image/')) {
+                          alert('Please select an image file');
+                          return;
+                        }
+
+                        if (file.size > 5 * 1024 * 1024) {
+                          alert('Image size must be less than 5MB');
+                          return;
+                        }
+
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setImagePreview(reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+
+                        setUploadingImage(true);
+                        try {
+                          const uploadResponse = await uploadAPI.uploadFile(file);
+                          if (uploadResponse.data && uploadResponse.data.files && uploadResponse.data.files.length > 0) {
+                            const imageUrl = uploadResponse.data.files[0].url;
+                            setImagePreview(getImageUrl(imageUrl) || imageUrl);
+                            // Update user with new image URL
+                            await userAPI.updateUser(Number(id!), { avatarUrl: imageUrl });
+                            queryClient.invalidateQueries({ queryKey: ['faculty', id] });
+                            queryClient.invalidateQueries({ queryKey: ['faculty'] });
+                            alert('Photo uploaded successfully!');
+                          }
+                        } catch (error: any) {
+                          console.error('Upload error:', error);
+                          alert(error.response?.data?.message || 'Failed to upload image');
+                        } finally {
+                          setUploadingImage(false);
+                        }
+                      }}
+                      disabled={uploadingImage}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                    />
+                    {uploadingImage && (
+                      <p className="mt-1 text-xs text-gray-500">Uploading...</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">JPG, PNG, WEBP, GIF - Max 5MB</p>
+                  </div>
+                </div>
+              </div>
+
               {/* Basic Information */}
               <div className="mb-8">
                 <h2 className="text-2xl font-bold mb-6">Basic Information</h2>

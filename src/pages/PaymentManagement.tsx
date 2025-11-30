@@ -272,17 +272,53 @@ export const PaymentManagement: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          {(user?.role === 'admin' || user?.role === 'superadmin') && (
-                            <button
-                              onClick={() => {
-                                setSelectedPayment(payment);
-                                setIsUpdateModalOpen(true);
-                              }}
-                              className="text-orange-600 hover:text-orange-900"
-                            >
-                              Update
-                            </button>
-                          )}
+                          <div className="flex gap-3 items-center">
+                            {payment.receiptUrl && (
+                              <>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const blob = await paymentAPI.downloadReceipt(payment.id);
+                                      const url = window.URL.createObjectURL(blob);
+                                      const link = document.createElement('a');
+                                      link.href = url;
+                                      link.download = `receipt_${payment.id}_${new Date().toISOString().split('T')[0]}.pdf`;
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      document.body.removeChild(link);
+                                      window.URL.revokeObjectURL(url);
+                                    } catch (error: any) {
+                                      alert(error.response?.data?.message || 'Failed to download receipt');
+                                    }
+                                  }}
+                                  className="text-blue-600 hover:text-blue-900 font-medium"
+                                  title="Download Receipt"
+                                >
+                                  📥 Receipt
+                                </button>
+                                <a
+                                  href={payment.receiptUrl.startsWith('http') ? payment.receiptUrl : `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'}${payment.receiptUrl}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-green-600 hover:text-green-900 font-medium"
+                                  title="View Receipt"
+                                >
+                                  👁️ View
+                                </a>
+                              </>
+                            )}
+                            {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                              <button
+                                onClick={() => {
+                                  setSelectedPayment(payment);
+                                  setIsUpdateModalOpen(true);
+                                }}
+                                className="text-orange-600 hover:text-orange-900"
+                              >
+                                Update
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

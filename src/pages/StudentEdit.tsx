@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { userAPI, UpdateUserRequest, UpdateStudentProfileRequest } from '../api/user.api';
 import { studentAPI, StudentDetails } from '../api/student.api';
+import { uploadAPI } from '../api/upload.api';
+import { getImageUrl } from '../utils/imageUtils';
 
 export const StudentEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -93,6 +95,11 @@ export const StudentEdit: React.FC = () => {
   });
 
   const [softwareListInput, setSoftwareListInput] = useState<string>('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [allSoftware, setAllSoftware] = useState<string[]>([]);
+  const [showSoftwareSuggestions, setShowSoftwareSuggestions] = useState(false);
+  const [filteredSoftware, setFilteredSoftware] = useState<string[]>([]);
 
   const updateUserMutation = useMutation({
     mutationFn: (data: UpdateUserRequest) => userAPI.updateUser(Number(id!), data),
@@ -117,6 +124,56 @@ export const StudentEdit: React.FC = () => {
       alert(error.response?.data?.message || 'Failed to update student profile');
     },
   });
+
+  // Initialize software list input when student data loads - MUST be before early returns
+  React.useEffect(() => {
+    if (studentDetailsResponse?.studentProfile?.softwareList && Array.isArray(studentDetailsResponse.studentProfile.softwareList)) {
+      setSoftwareListInput(studentDetailsResponse.studentProfile.softwareList.join(', '));
+    } else {
+      setSoftwareListInput('');
+    }
+  }, [studentDetailsResponse?.studentProfile?.softwareList]);
+
+  // Initialize image preview when student data loads
+  React.useEffect(() => {
+    if (studentDetailsResponse?.studentProfile?.photoUrl || studentDetailsResponse?.avatarUrl) {
+      setImagePreview(studentDetailsResponse.studentProfile?.photoUrl || studentDetailsResponse.avatarUrl || null);
+    }
+  }, [studentDetailsResponse?.studentProfile?.photoUrl, studentDetailsResponse?.avatarUrl]);
+
+  // Fetch all software list
+  React.useEffect(() => {
+    const fetchAllSoftware = async () => {
+      try {
+        const response = await studentAPI.getAllSoftware();
+        if (response.data?.software) {
+          setAllSoftware(response.data.software);
+        }
+      } catch (error) {
+        console.error('Failed to fetch software list:', error);
+      }
+    };
+    fetchAllSoftware();
+  }, []);
+
+  // Filter software suggestions based on input
+  React.useEffect(() => {
+    if (softwareListInput && allSoftware.length > 0) {
+      const currentInput = softwareListInput.split(',').pop()?.trim() || '';
+      if (currentInput.length > 0) {
+        const filtered = allSoftware.filter(software =>
+          software.toLowerCase().includes(currentInput.toLowerCase()) &&
+          !softwareListInput.split(',').slice(0, -1).map(s => s.trim()).includes(software)
+        );
+        setFilteredSoftware(filtered.slice(0, 10)); // Show max 10 suggestions
+        setShowSoftwareSuggestions(filtered.length > 0);
+      } else {
+        setShowSoftwareSuggestions(false);
+      }
+    } else {
+      setShowSoftwareSuggestions(false);
+    }
+  }, [softwareListInput, allSoftware]);
 
   // Check if user is loaded
   if (!user) {
@@ -318,14 +375,6 @@ export const StudentEdit: React.FC = () => {
     return '';
   };
 
-  React.useEffect(() => {
-    if (studentData?.studentProfile?.softwareList && Array.isArray(studentData.studentProfile.softwareList)) {
-      setSoftwareListInput(studentData.studentProfile.softwareList.join(', '));
-    } else {
-      setSoftwareListInput('');
-    }
-  }, [studentData]);
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!studentData) {
@@ -395,16 +444,17 @@ export const StudentEdit: React.FC = () => {
                 <h2 className="text-2xl font-bold mb-6">Student Photo</h2>
                 <div className="flex items-center gap-6">
                   {(() => {
-                    const photoUrl = studentData?.studentProfile?.photoUrl || studentData?.avatarUrl;
+                    const photoUrl = imagePreview || studentData?.studentProfile?.photoUrl || studentData?.avatarUrl;
                     const studentName = studentData?.name || 'Student';
                     if (photoUrl) {
                       return (
                         <img
-                          src={photoUrl}
+                          src={getImageUrl(photoUrl) || photoUrl}
                           alt={studentName}
                           className="w-32 h-32 rounded-full object-cover border-4 border-orange-500 shadow-lg"
+                          crossOrigin="anonymous"
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(studentName) + '&background=orange&color=fff&size=128';
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY5NTAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPnt7c3R1ZGVudE5hbWUuY2hhckF0KDApfX08L3RleHQ+PC9zdmc+';
                           }}
                         />
                       );
@@ -417,26 +467,60 @@ export const StudentEdit: React.FC = () => {
                     }
                   })()}
                   <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Avatar URL</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Photo</label>
                     <input
-                      type="url"
-                      name="avatarUrl"
-                      defaultValue={studentData?.avatarUrl || ''}
-                      placeholder="https://example.com/photo.jpg"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        if (!file.type.startsWith('image/')) {
+                          alert('Please select an image file');
+                          return;
+                        }
+
+                        if (file.size > 5 * 1024 * 1024) {
+                          alert('Image size must be less than 5MB');
+                          return;
+                        }
+
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setImagePreview(reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+
+                        setUploadingImage(true);
+                        try {
+                          const uploadResponse = await uploadAPI.uploadFile(file);
+                          if (uploadResponse.data && uploadResponse.data.files && uploadResponse.data.files.length > 0) {
+                            const imageUrl = uploadResponse.data.files[0].url;
+                            setImagePreview(getImageUrl(imageUrl) || imageUrl);
+                            // Update user with new image URL
+                            await userAPI.updateUser(Number(id!), { avatarUrl: imageUrl });
+                            // Also update student profile photoUrl
+                            if (studentData?.studentProfile) {
+                              await userAPI.updateStudentProfile(Number(id!), { photoUrl: imageUrl });
+                            }
+                            queryClient.invalidateQueries({ queryKey: ['student-details', id] });
+                            queryClient.invalidateQueries({ queryKey: ['students'] });
+                            alert('Photo uploaded successfully!');
+                          }
+                        } catch (error: any) {
+                          console.error('Upload error:', error);
+                          alert(error.response?.data?.message || 'Failed to upload image');
+                        } finally {
+                          setUploadingImage(false);
+                        }
+                      }}
+                      disabled={uploadingImage}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
                     />
-                    <p className="mt-1 text-xs text-gray-500">URL for student's profile photo</p>
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Profile Photo URL</label>
-                    <input
-                      type="url"
-                      name="photoUrl"
-                      defaultValue={studentData?.studentProfile?.photoUrl || ''}
-                      placeholder="https://example.com/photo.jpg"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Alternative photo URL in student profile</p>
+                    {uploadingImage && (
+                      <p className="mt-1 text-xs text-gray-500">Uploading...</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">JPG, PNG, WEBP, GIF - Max 5MB</p>
                   </div>
                 </div>
               </div>
@@ -550,14 +634,47 @@ export const StudentEdit: React.FC = () => {
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Software List</label>
-                    <input
-                      type="text"
-                      value={softwareListInput}
-                      onChange={(e) => setSoftwareListInput(e.target.value)}
-                      placeholder="Photoshop, Illustrator, InDesign (comma-separated)"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Enter software names separated by commas</p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={softwareListInput}
+                        onChange={(e) => setSoftwareListInput(e.target.value)}
+                        onFocus={() => {
+                          const currentInput = softwareListInput.split(',').pop()?.trim() || '';
+                          if (currentInput.length > 0) {
+                            setShowSoftwareSuggestions(true);
+                          }
+                        }}
+                        onBlur={() => {
+                          // Delay hiding to allow click on suggestion
+                          setTimeout(() => setShowSoftwareSuggestions(false), 200);
+                        }}
+                        placeholder="Photoshop, Illustrator, InDesign (comma-separated)"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      {showSoftwareSuggestions && filteredSoftware.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {filteredSoftware.map((software, index) => (
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={() => {
+                                const parts = softwareListInput.split(',');
+                                parts[parts.length - 1] = software;
+                                setSoftwareListInput(parts.join(', ') + ', ');
+                                setShowSoftwareSuggestions(false);
+                              }}
+                              className="w-full text-left px-4 py-2 hover:bg-orange-50 focus:bg-orange-50 focus:outline-none"
+                            >
+                              {software}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Enter software names separated by commas. Available software: {allSoftware.length} options
+                    </p>
                     {studentData?.studentProfile?.softwareList && Array.isArray(studentData.studentProfile.softwareList) && studentData.studentProfile.softwareList.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {studentData.studentProfile.softwareList.map((software: string, index: number) => (

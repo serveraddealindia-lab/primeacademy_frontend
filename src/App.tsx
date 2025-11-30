@@ -29,6 +29,7 @@ import { UserManagement } from './pages/UserManagement';
 import { RoleManagement } from './pages/RoleManagement';
 import { CertificateManagement } from './pages/CertificateManagement';
 import { BiometricSettings } from './pages/BiometricSettings';
+import { PhotoManagement } from './pages/PhotoManagement';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -282,6 +283,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <BiometricSettings />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/photos"
+        element={
+          <ProtectedRoute>
+            <PhotoManagement />
           </ProtectedRoute>
         }
       />

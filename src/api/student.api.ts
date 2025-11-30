@@ -169,5 +169,15 @@ export const studentAPI = {
     });
     return response.data;
   },
+
+  createThreeDummyStudents: async (): Promise<{ status: string; message: string; data: any }> => {
+    const response = await api.post('/students/create-three-dummy');
+    return response.data;
+  },
+
+  getAllSoftware: async (): Promise<{ status: string; data: { software: string[]; count: number } }> => {
+    const response = await api.get('/students/all-software');
+    return response.data;
+  },
 };
 

@@ -11,6 +11,8 @@ export interface Certificate {
   pdfUrl?: string;
   issuedBy?: number;
   issuedAt?: string;
+  studentDeclarationAccepted?: boolean;
+  studentDeclarationDate?: string;
   createdAt?: string;
   updatedAt?: string;
   student?: {
@@ -32,6 +34,7 @@ export interface CreateCertificateRequest {
   grade: string;
   monthOfCompletion: string;
   certificateNumber?: string;
+  studentDeclarationAccepted?: boolean; // Optional declaration acceptance
 }
 
 export interface CertificatesResponse {
@@ -72,4 +75,6 @@ export const certificateAPI = {
     return response.data;
   },
 };
+
+
 

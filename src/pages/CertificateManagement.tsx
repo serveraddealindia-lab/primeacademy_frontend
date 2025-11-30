@@ -70,7 +70,9 @@ export const CertificateManagement: React.FC = () => {
     grade: '',
     monthOfCompletion: '',
     certificateNumber: '',
+    studentDeclarationAccepted: false,
   });
+  const [showDeclaration, setShowDeclaration] = useState(false);
 
   // Fetch students
   const { data: studentsData, isLoading: isLoadingStudents } = useQuery({
@@ -112,7 +114,9 @@ export const CertificateManagement: React.FC = () => {
         grade: '',
         monthOfCompletion: '',
         certificateNumber: '',
+        studentDeclarationAccepted: false,
       });
+      setShowDeclaration(false);
       alert('Certificate created successfully! PDF has been generated.');
       // Optionally download the PDF
       if (response.data.pdfUrl) {
@@ -286,6 +290,9 @@ export const CertificateManagement: React.FC = () => {
                         Month
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Declaration
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
@@ -353,6 +360,17 @@ export const CertificateManagement: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {certificate.monthOfCompletion}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {certificate.studentDeclarationAccepted ? (
+                            <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs font-semibold">
+                              Accepted
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                              Not Required
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <button
@@ -525,6 +543,73 @@ export const CertificateManagement: React.FC = () => {
                   <p className="mt-1 text-xs text-gray-500">
                     Leave empty to auto-generate based on student name and course
                   </p>
+                </div>
+
+                {/* Student Declaration Section */}
+                <div className="border-t border-gray-200 pt-6">
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800 mb-2">
+                      <strong>Note:</strong> Please note it is mandatory to submit the completed portfolio for certificate request. Placement and certificate will be strictly subject to portfolio approval and attendance verification.
+                    </p>
+                    <p className="text-sm text-blue-800">
+                      In case, you require the certificate without submission/completion of portfolio then please accept the below terms and sign the declaration. Hence forth, you will not be eligible for placement from Prime Academy.
+                    </p>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showDeclaration}
+                        onChange={(e) => {
+                          setShowDeclaration(e.target.checked);
+                          if (!e.target.checked) {
+                            setFormData({ ...formData, studentDeclarationAccepted: false });
+                          }
+                        }}
+                        className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">
+                        I want to request certificate without portfolio submission
+                      </span>
+                    </label>
+                  </div>
+
+                  {showDeclaration && (
+                    <div className="p-4 bg-gray-50 border-2 border-green-600 rounded-lg">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Student Declaration:</h3>
+                      <div className="mb-4 text-sm text-gray-700 leading-relaxed">
+                        <p className="mb-2">
+                          This is a confirmation from <strong>{students.find(s => s.id === formData.studentId)?.name || '[Student Name]'}</strong>, I completely understand the policy of the portfolio submission in Professional development and job placement from the Academy.
+                        </p>
+                        <p className="mb-2">
+                          But, I am not seeking job placement from the academy or any recommendation. This request is only for the certificate of course completion without submission of my portfolio.
+                        </p>
+                        <p>
+                          I understand that I will not be following up ahead anytime for any job related support or recommendation in future from the academy.
+                        </p>
+                      </div>
+                      <div className="mt-4">
+                        <label className="flex items-start space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.studentDeclarationAccepted || false}
+                            onChange={(e) => setFormData({ ...formData, studentDeclarationAccepted: e.target.checked })}
+                            className="mt-1 w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                          />
+                          <span className="text-sm text-gray-700">
+                            I accept and agree to the above declaration terms and conditions
+                          </span>
+                        </label>
+                      </div>
+                      <div className="mt-4 p-3 bg-white border border-gray-300 rounded">
+                        <div className="text-xs text-gray-500 mb-2">Signature / Date:</div>
+                        <div className="h-16 border-2 border-dashed border-gray-400 rounded flex items-center justify-center text-gray-400 text-sm">
+                          [Signature Box]
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Action Buttons */}

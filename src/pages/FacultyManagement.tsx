@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout';
 import { facultyAPI, FacultyUser } from '../api/faculty.api';
 import { userAPI } from '../api/user.api';
 import { uploadAPI } from '../api/upload.api';
+import { getImageUrl } from '../utils/imageUtils';
 
 export const FacultyManagement: React.FC = () => {
   const { user } = useAuth();
@@ -188,12 +189,13 @@ export const FacultyManagement: React.FC = () => {
                         <div className="flex-shrink-0">
                           {facultyMember.avatarUrl ? (
                             <img
-                              src={`${facultyMember.avatarUrl}?t=${Date.now()}`}
+                              src={getImageUrl(facultyMember.avatarUrl) || ''}
                               alt={facultyMember.name}
                               className="h-16 w-16 rounded-full object-cover border-2 border-orange-200"
+                              crossOrigin="anonymous"
                               key={facultyMember.avatarUrl}
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(facultyMember.name) + '&background=orange&color=fff';
+                                (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmOTUwMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj57e2ZhY3VsdHlNZW1iZXIubmFtZS5jaGFyQXQoMCl9fTwvdGV4dD48L3N2Zz4=';
                               }}
                             />
                           ) : (
@@ -322,10 +324,14 @@ export const FacultyManagement: React.FC = () => {
                   />
                 ) : selectedFaculty?.avatarUrl ? (
                   <img
-                    src={`${selectedFaculty.avatarUrl}?t=${Date.now()}`}
+                    src={getImageUrl(selectedFaculty.avatarUrl) || ''}
                     alt="Current"
                     className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    crossOrigin="anonymous"
                     key={selectedFaculty.avatarUrl}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY5NTAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPnt7c2VsZWN0ZWRGYWN1bHR5Lm5hbWUuY2hhckF0KDApfX08L3RleHQ+PC9zdmc+';
+                    }}
                   />
                 ) : (
                   <div className="h-32 w-32 rounded-full bg-gray-200 flex items-center justify-center">

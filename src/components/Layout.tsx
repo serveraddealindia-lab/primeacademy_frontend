@@ -31,6 +31,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Roles', href: '/roles', icon: '🔐', module: null }, // Only for superadmin
     { name: 'Certificates', href: '/certificates', icon: '🎓', module: null }, // Only for admin/superadmin
     { name: 'Biometric Settings', href: '/biometric-settings', icon: '👆', module: null }, // Only for admin/superadmin
+    { name: 'Photo Management', href: '/photos', icon: '📷', module: null }, // Only for admin/superadmin
   ];
 
   // Filter navigation based on user role permissions
@@ -51,6 +52,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       
       // Biometric Settings is only for admin/superadmin
       if (item.name === 'Biometric Settings') {
+        return user?.role === 'admin' || user?.role === 'superadmin';
+      }
+      
+      // Photo Management is only for admin/superadmin
+      if (item.name === 'Photo Management') {
         return user?.role === 'admin' || user?.role === 'superadmin';
       }
       

@@ -9,6 +9,7 @@ export interface PaymentTransaction {
   dueDate?: string;
   paidDate?: string;
   status: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+  receiptUrl?: string | null;
   paymentMethod?: string | null;
   transactionId?: string | null;
   notes?: string | null;
@@ -85,6 +86,12 @@ export const paymentAPI = {
   },
   updatePayment: async (id: number, data: UpdatePaymentRequest): Promise<PaymentResponse> => {
     const response = await api.put<PaymentResponse>(`/payments/${id}`, data);
+    return response.data;
+  },
+  downloadReceipt: async (id: number): Promise<Blob> => {
+    const response = await api.get(`/payments/${id}/receipt`, {
+      responseType: 'blob',
+    });
     return response.data;
   },
 };

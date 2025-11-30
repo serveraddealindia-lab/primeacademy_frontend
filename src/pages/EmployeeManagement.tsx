@@ -6,6 +6,7 @@ import { Layout } from '../components/Layout';
 import { employeeAPI, Employee } from '../api/employee.api';
 import { userAPI } from '../api/user.api';
 import { uploadAPI } from '../api/upload.api';
+import { getImageUrl } from '../utils/imageUtils';
 
 export const EmployeeManagement: React.FC = () => {
   const { user } = useAuth();
@@ -203,12 +204,13 @@ export const EmployeeManagement: React.FC = () => {
                           <div className="flex items-center">
                             {employee.avatarUrl ? (
                               <img
-                                src={`${employee.avatarUrl}?t=${Date.now()}`}
+                                src={getImageUrl(employee.avatarUrl) || ''}
                                 alt={employee.name}
                                 className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                                crossOrigin="anonymous"
                                 key={employee.avatarUrl}
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(employee.name) + '&background=orange&color=fff';
+                                  (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmOTUwMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj57e2VtcGxveWVlLm5hbWUuY2hhckF0KDApfX08L3RleHQ+PC9zdmc+';
                                 }}
                               />
                             ) : (
@@ -332,10 +334,14 @@ export const EmployeeManagement: React.FC = () => {
                   />
                 ) : selectedEmployee?.avatarUrl ? (
                   <img
-                    src={`${selectedEmployee.avatarUrl}?t=${Date.now()}`}
+                    src={getImageUrl(selectedEmployee.avatarUrl) || ''}
                     alt="Current"
                     className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    crossOrigin="anonymous"
                     key={selectedEmployee.avatarUrl}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY5NTAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPnt7c2VsZWN0ZWRFbXBsb3llZS5uYW1lLmNoYXJBdCgwKX19PC90ZXh0Pjwvc3ZnPg==';
+                    }}
                   />
                 ) : (
                   <div className="h-32 w-32 rounded-full bg-gray-200 flex items-center justify-center">

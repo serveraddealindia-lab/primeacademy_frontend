@@ -8,6 +8,8 @@ import { batchAPI } from '../api/batch.api';
 import { uploadAPI } from '../api/upload.api';
 import { softwareCompletionAPI } from '../api/softwareCompletion.api';
 import { userAPI } from '../api/user.api';
+import { getImageUrl } from '../utils/imageUtils';
+import { orientationAPI, OrientationLanguage } from '../api/orientation.api';
 
 export const StudentManagement: React.FC = () => {
   const { user } = useAuth();
@@ -18,11 +20,17 @@ export const StudentManagement: React.FC = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
+  const [isOrientationModalOpen, setIsOrientationModalOpen] = useState(false);
+  const [orientationStudentId, setOrientationStudentId] = useState<number | null>(null);
+  const [activeOrientationTab, setActiveOrientationTab] = useState<'english' | 'gujarati'>('english');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingBulk, setUploadingBulk] = useState(false);
   const [bulkUploadResult, setBulkUploadResult] = useState<{ success: number; failed: number; errors: any[] } | null>(null);
+  
+  // Store orientation status for all students
+  const [orientationStatusMap, setOrientationStatusMap] = useState<Record<number, { isEligible: boolean; english: boolean; gujarati: boolean }>>({});
 
   // Fetch students
   const { data: studentsData, isLoading } = useQuery({
@@ -70,6 +78,28 @@ export const StudentManagement: React.FC = () => {
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Failed to enroll student. Please check if the enrollment endpoint exists in the backend.');
+    },
+  });
+
+  // Accept orientation mutation
+  const acceptOrientationMutation = useMutation({
+    mutationFn: ({ studentId, language }: { studentId: number; language: OrientationLanguage }) =>
+      orientationAPI.acceptOrientation(studentId, language),
+    onSuccess: (data, variables) => {
+      // Update local state
+      setOrientationStatusMap((prev) => ({
+        ...prev,
+        [variables.studentId]: {
+          isEligible: data.data.isEligible,
+          english: data.data.orientations.english.accepted,
+          gujarati: data.data.orientations.gujarati.accepted,
+        },
+      }));
+      queryClient.invalidateQueries({ queryKey: ['bulk-orientation-status'] });
+      alert('Orientation accepted successfully!');
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.message || 'Failed to accept orientation');
     },
   });
 
@@ -132,6 +162,15 @@ export const StudentManagement: React.FC = () => {
   const handleDownloadTemplate = async () => {
     try {
       const blob = await studentAPI.downloadEnrollmentTemplate();
+      
+      // Check if blob is actually an error JSON response
+      if (blob.type === 'application/json') {
+        const text = await blob.text();
+        const errorData = JSON.parse(text);
+        alert(errorData.message || 'Failed to download template');
+        return;
+      }
+      
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -141,7 +180,24 @@ export const StudentManagement: React.FC = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to download template');
+      console.error('Download template error:', error);
+      // Try to extract error message from response
+      if (error.response?.data) {
+        if (error.response.data instanceof Blob) {
+          error.response.data.text().then((text: string) => {
+            try {
+              const errorData = JSON.parse(text);
+              alert(errorData.message || 'Failed to download template');
+            } catch {
+              alert('Failed to download template');
+            }
+          });
+        } else {
+          alert(error.response.data.message || 'Failed to download template');
+        }
+      } else {
+        alert(error.message || 'Failed to download template');
+      }
     }
   };
 
@@ -335,6 +391,9 @@ export const StudentManagement: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Joined Date
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Orientation
+                      </th>
                       {(user?.role === 'admin' || user?.role === 'superadmin') && (
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
@@ -349,11 +408,12 @@ export const StudentManagement: React.FC = () => {
                           <div className="flex items-center">
                             {student.avatarUrl ? (
                               <img
-                                src={student.avatarUrl}
+                                src={getImageUrl(student.avatarUrl) || ''}
                                 alt={student.name}
                                 className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                                crossOrigin="anonymous"
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(student.name) + '&background=orange&color=fff';
+                                  (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmOTUwMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj57e3N0dWRlbnQubmFtZS5jaGFyQXQoMCl9fTwvdGV4dD48L3N2Zz4=';
                                 }}
                               />
                             ) : (
@@ -376,6 +436,35 @@ export const StudentManagement: React.FC = () => {
                           <div className="text-sm text-gray-500">
                             {student.createdAt ? new Date(student.createdAt).toLocaleDateString() : '-'}
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {(() => {
+                            const status = orientationStatusMap[student.id];
+                            const isEligible = status?.isEligible || false;
+                            return (
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`px-2 py-1 rounded text-xs font-semibold ${
+                                    isEligible
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-yellow-100 text-yellow-800'
+                                  }`}
+                                >
+                                  {isEligible ? '✓ Eligible' : '⏳ Pending'}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    setOrientationStudentId(student.id);
+                                    setIsOrientationModalOpen(true);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-900 text-xs"
+                                  title="View Orientation"
+                                >
+                                  📄 Orientation
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex gap-2">
@@ -528,10 +617,14 @@ export const StudentManagement: React.FC = () => {
                   />
                 ) : selectedStudent?.avatarUrl ? (
                   <img
-                    src={`${selectedStudent.avatarUrl}?t=${Date.now()}`}
+                    src={getImageUrl(selectedStudent.avatarUrl) || ''}
                     alt="Current"
                     className="h-32 w-32 rounded-full object-cover border-4 border-orange-500"
+                    crossOrigin="anonymous"
                     key={selectedStudent.avatarUrl}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY5NTAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPnt7c2VsZWN0ZWRTdHVkZW50Lm5hbWUuY2hhckF0KDApfX08L3RleHQ+PC9zdmc+';
+                    }}
                   />
                 ) : (
                   <div className="h-32 w-32 rounded-full bg-gray-200 flex items-center justify-center">
@@ -659,11 +752,12 @@ export const StudentManagement: React.FC = () => {
                       return (
                         <div className="text-center">
                           <img
-                            src={photoUrl}
+                            src={getImageUrl(photoUrl) || photoUrl}
                             alt={studentName}
                             className="w-40 h-40 rounded-full object-cover border-4 border-orange-500 shadow-lg mx-auto"
+                            crossOrigin="anonymous"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(studentName) + '&background=orange&color=fff&size=160';
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYwIiBoZWlnaHQ9IjE2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY5NTAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI0OCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPnt7c3R1ZGVudE5hbWUuY2hhckF0KDApfX08L3RleHQ+PC9zdmc+';
                             }}
                           />
                           <p className="mt-3 text-sm font-medium text-gray-700">Student Photo</p>
@@ -1030,6 +1124,349 @@ export const StudentManagement: React.FC = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Orientation Modal */}
+      {isOrientationModalOpen && orientationStudentId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900">Student Orientation</h2>
+              <button
+                onClick={() => {
+                  setIsOrientationModalOpen(false);
+                  setOrientationStudentId(null);
+                  setActiveOrientationTab('english');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Tabs */}
+              <div className="border-b border-gray-200 flex">
+                <button
+                  onClick={() => setActiveOrientationTab('english')}
+                  className={`px-6 py-3 font-medium text-sm ${
+                    activeOrientationTab === 'english'
+                      ? 'text-orange-600 border-b-2 border-orange-600'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  English
+                </button>
+                <button
+                  onClick={() => setActiveOrientationTab('gujarati')}
+                  className={`px-6 py-3 font-medium text-sm ${
+                    activeOrientationTab === 'gujarati'
+                      ? 'text-orange-600 border-b-2 border-orange-600'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Gujarati
+                </button>
+              </div>
+
+              {/* Orientation Content */}
+              <div className="flex-1 overflow-auto p-6 bg-white">
+                {activeOrientationTab === 'english' ? (
+                  <div className="max-w-4xl mx-auto prose prose-sm">
+                    <div className="text-center mb-6">
+                      <h1 className="text-2xl font-bold text-gray-900 mb-2">Student Orientation</h1>
+                      <p className="text-sm text-gray-600">601 Gala Empire, Opp. Doordarshan metro station, Drive-In Road, Ahmedabad 380052</p>
+                      <p className="text-sm text-gray-600">Helpdesk: 9033222499 | Technical Help: 9825308959</p>
+                    </div>
+
+                    <div className="space-y-6 text-gray-800">
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Coaching & Practice</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4">
+                          <li className="mb-3">
+                            <strong>3 days classroom coaching and 3 days lab practice is mandatory for every student</strong>
+                          </li>
+                          <li className="mb-3">
+                            The batch timing may change with new software
+                          </li>
+                          <li className="mb-3">
+                            If you have given commitment for special batch timing, plz do mention here
+                            <div className="border-b-2 border-gray-400 mt-2 mb-2 w-64"></div>
+                          </li>
+                          <li className="mb-3">
+                            The software practice is necessary in lab to complete assignments, for any reason if you are unable to come for practice at lab then mention here
+                            <div className="border-b-2 border-gray-400 mt-2 mb-2 w-64"></div>
+                          </li>
+                          <li className="mb-3">
+                            For any course, the ratio for coaching and practice is <strong>1:2</strong>, it means every classroom lecture you will have to make <strong>2 hours minimum practice</strong> and hence <strong>minimum 25 hours practice is compulsory at lab</strong>. For the best career <strong>monthly 50 hours practice is highly recommended</strong>.
+                          </li>
+                          <li className="mb-3">
+                            Student may bring their own laptop is desirable and if he/she couldn't arrange laptop then he/she may book the practice slot accordingly. Practice lab is open <strong>9:00 am to 7:00 pm from Monday to Saturday</strong>. Faculty will guide during practice as per their availability
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Portfolio & Placement</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4" start={7}>
+                          <li className="mb-3">
+                            During the study of software, the faculty will guide for portfolio (assignments) and such assignment will have to get approved by faculty at end of each software.
+                          </li>
+                          <li className="mb-3">
+                            The placement call will sole depend on the portfolio work and practice hours. <strong>The student without approved portfolio is not eligible for placement</strong>
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Fees payment & monthly EMIs</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4" start={9}>
+                          <li className="mb-3">
+                            The student who enrolled on EMI payment term has to deposits all PDCs (postdated cheques) and such cheques will be deposited in bank latest by <strong>10th of every month</strong> OR he has to pay monthly EMI between <strong>1st to 10th day of every month</strong>. Any payment after 10th day will be liable to late payment charges <strong>Rs. 50/- per day</strong>. Student will get GST paid receipt from A/C dept between <strong>15th to 20th day of every month</strong>. If any student get any exemption in payment date, plz mention here
+                            <div className="border-b-2 border-gray-400 mt-2 mb-2 w-64"></div>
+                            . All fees payment are including GST and non-refundable
+                          </li>
+                          <li className="mb-3">
+                            Each course and its payment is non-transferable. No course can be down-graded in value or duration but it can be up-graded to bigger course value/duration. Any up gradation is subject to approval and for that student needs to pay difference amount in advance
+                          </li>
+                          <li className="mb-3">
+                            The course progress will sole depend on the grasping ability of student, leaves, absenteeism and circumstances and it is no way related to payment made for the course. The payment made is no way connected and co-related with the course completion which please be noted
+                          </li>
+                          <li className="mb-3">
+                            Cheques bounce charges <strong>Rs. 350/-</strong>
+                          </li>
+                          <li className="mb-3">
+                            After the completion of 6 month only, if any student is not able to pay fees for any month then he has to pay <strong>Rs. 1200/- as penalty</strong> and it is not part of total payment. Student can be considered as dropped out in system in case of fail to payment and study will be paused till clearance of all due with activation charge
+                          </li>
+                          <li className="mb-3">
+                            Student will have to pay their monthly EMI during the long leave for whatever reason.
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Student Orientation</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4" start={15}>
+                          <li className="mb-3">
+                            Student will get backup for the lectures/study he/she missed during the approved leaves and there is no backup for leave without approval.
+                          </li>
+                          <li className="mb-3">
+                            If any student face any difficulty in understanding of any software then on special recommendation of faculty the entire software will get repeated without any extra cost
+                          </li>
+                          <li className="mb-3">
+                            Once you enrolled with us you are our lifetime member and as privilege you may visit us for any technical assistance or job placement in future and all such services are <strong>FREE FOREVER</strong>
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section className="mt-8 p-4 bg-gray-50 rounded border border-gray-200">
+                        <p className="mb-4 text-sm">
+                          If you have given any special commitment by counselor then do mention here/ or leave blank
+                        </p>
+                        <div className="border-b-2 border-gray-400 mb-2"></div>
+                        <div className="border-b-2 border-gray-400 mb-2"></div>
+                        <div className="border-b-2 border-gray-400 mb-4"></div>
+                      </section>
+
+                      <section className="mt-8 space-y-4">
+                        <div className="flex gap-8">
+                          <div className="flex-1">
+                            <p className="mb-2"><strong>Student Name:</strong></p>
+                            <div className="border-b-2 border-gray-400 mb-4"></div>
+                          </div>
+                          <div className="flex-1">
+                            <p className="mb-2"><strong>Course:</strong></p>
+                            <div className="border-b-2 border-gray-400 mb-4"></div>
+                          </div>
+                        </div>
+                        <p className="mt-6 mb-4">
+                          I, hereby confirm that I got detailed understanding for all above rule & regulation of institute and I assure to follow the same.
+                        </p>
+                        <div className="mt-8">
+                          <p className="mb-2"><strong>Student Sign / Date</strong></p>
+                          <div className="border-b-2 border-gray-400 w-48"></div>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-w-4xl mx-auto prose prose-sm">
+                    <div className="text-center mb-6">
+                      <h1 className="text-2xl font-bold text-gray-900 mb-2">વિદ્યાર્થી ઓરિએન્ટેશન</h1>
+                      <p className="text-sm text-gray-600">401, Shilp Square B, Opp. Sales India, Drive-In Road, Ahmedabad 380052</p>
+                      <p className="text-sm text-gray-600">Helpdesk: 9033222499 | Technical Help: 9825308959</p>
+                    </div>
+
+                    <div className="space-y-6 text-gray-800">
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Coaching & Practice</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4">
+                          <li className="mb-3">
+                            <strong>દરેક વિદ્યાર્થી એ પોતાના કોર્સ માાં અઠિાવિયા માાં ૩ વદિર્ ક્લાર્ કોવ ાંગ અને ૩ વદિર્ પ્રેકટીર્ કરિાની રહેશે.</strong>
+                          </li>
+                          <li className="mb-3">
+                            બે નો ટાઈમ દરેક ર્ોફ્ટિેર િખતે બદલાઈ શકે છે.
+                          </li>
+                          <li className="mb-3">
+                            જો આપણે કોઈ ોક્કર્ ર્મયે બે આપિાની િાત ર્થઇ હોય તો અહીયાં ા જણાિિ ાં.
+                            <div className="border-b-2 border-gray-400 mt-2 mb-2 w-64"></div>
+                          </li>
+                          <li className="mb-3">
+                            લેબ માાં આિીને પ્રેકટીર્ કરિી જરૂરી છે. કોઈ ોક્કર્ કારણોર્ર જો લેબ માાં પ્રેકટીર્ ના ર્થઇ શકે એમ હોય તો અહીયાં ા સ્પષ્ટતા કરિી
+                            <div className="border-b-2 border-gray-400 mt-2 mb-2 w-64"></div>
+                          </li>
+                          <li className="mb-3">
+                            દરેક કોર્સ માટે <strong>૧:૨ નો પ્રેકટીર્ રેર્ીઓ જરૂરી છે</strong>. એક લેક્ ર ર્ામે <strong>૨ કલાક પ્રેકટીર્ વમવનમમ હોિી જરૂરી છે</strong>. એ મ જબ મવહના માાં <strong>25 કલાક પ્રેવક્ટર્ કરિી જરૂરી છે</strong>. પરાંત એક ર્ારી કારવકદી માટે મવહના માાં <strong>૫૦ કલાક પ્રેકટીર્ હોિી અવનિાયસ છે</strong>.
+                          </li>
+                          <li className="mb-3">
+                            પ્રેવક્ટર્ માટે વિદ્યાર્થી પોતાન ાં લેપટોપ લઈને આિે તે આિિકાયસ છે પણ જરૂરી નર્થી. પ્રેવક્ટર્ નો ટાઈમ સ્લોટ અગાઉ ર્થી બ કરિો જરૂરી છે. જેર્થી વ્યિસ્ર્થા જાળિી શકાય. પ્રેવક્ટર્ લેબ નો ટાઈમ ર્િારે <strong>૯ ર્થી ર્ાાંજે૭ ર્ ધી રહેશે</strong>. પ્રેવક્ટર્ દરમ્યાન ફેકલ્ટી ન ાં માગસદશસન એમના ફ્રી ટાઈમ મ જબ મળી શકશે.
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Portfolio & Placement</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4" start={7}>
+                          <li className="mb-3">
+                            દરેક ર્ોફ્ટિેર પૂરાં ર્થયા બાદ એક સ્ટાન્િિસ પોટસફોવલયો બનાિી ને ફેકલ્ટી પાર્ે ok કરાિિો જરૂરી છે. એક ર્ોફ્ટિેર બાદ બીજ ાં ર્ોફ્ટિેર ાલ  કરિા માટે પોટસફોવલયો િકસ પૂરાં કરિ ાં જરૂરી છે.
+                          </li>
+                          <li className="mb-3">
+                            <strong>સ્ટાન્િિસ પોટસફોવલયો િગર અને પ રા પ્રેકટીર્ કલાકો વર્િાય જોબ પ્લેર્મેન્ટ માટે કોઈ વિદ્યાર્થી ને મોકલી શકાશે નવહ.</strong>
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Fees Payment & Monthly EMIs</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4" start={9}>
+                          <li className="mb-3">
+                            જે વિદ્યાર્થીઓ એ ફીર્ પેમેન્ટ માટે EMI કરાિેલા છે એ તમામ વિદ્યાર્થીઓ એ નિા મવહના ની <strong>૧ ર્થી ૧૦ તારીખ ર્ ધી માાં ફીર્ પેમેન્ટ કરિ ાં જરૂરી છે</strong> તેના માટે PDC આપિા જરૂરી છે જે Institute દ્વારા <strong>૧૦ તારીખે બેંક વિપોવિટ કરિામાાં આિશે</strong>. ત્યાર બાદ <strong>Rs 50/- પ્રવત વદિર્ લેખે લેટ પેમેન્ટ ાજસર્સ લાગશે</strong> જેની દરેકે નોાંધ લેિી. દરેક લેટ પેમેન્ટ ને પહોાં મળશે. જો કોઈ વિદ્યાર્થી ને સ્પેશ્યલ કેર્ તરીકે ૧૦ તારીખ પછી પયમેન્ટ ની િાત ર્થયી હોય તો અહીયાં ા જણાિિ ાં
+                            <div className="border-b-2 border-gray-400 mt-2 mb-2 w-64"></div>
+                            ત્યારબાદ લેટ પેમેન્ટ ાજસર્સ લાગ  પિશે.
+                            <br />
+                            કોઈ પણ કોર્સ માટે ન ાં પેમેન્ટ GST ર્હીત ન ાં છે જેના માટે GST િળી પાકી receipt PDF copy માાં <strong>૧૫ ર્થી ૨૦ તારીખ દરમ્યાન મળી જશે</strong>. કોઈ પણ પ્રકાર ન ાં પેમેન્ટ પાછ ાં મળિા પાત્ર નર્થી.
+                          </li>
+                          <li className="mb-3">
+                            કોઈ પણ કોર્સ ન ાં પેમેન્ટ તબદીલી ને પાત્ર નર્થી. વિદ્યાર્થી એ જે કોર્સ માાં એિવમશન લીધ ાં હશે તે કોર્સ ને કોઈ બીજા નાના કોર્સ માાં તબદીલ કરી શકાશે નવહ પરાંત મોટા વકાંમત / ર્મયગાળા ના કોર્સ માાં તબદીલ કરી શકાશે આ તબદીલી મેનેજમેન્ટ ની રજામાંદી ર્થી ર્થઇ શકશે જેના માટે તફાિત ની રકમ એિિાન્ર્ માાં ભરિાની રહેશે.
+                          </li>
+                          <li className="mb-3">
+                            કોઈ પણ કોર્સ નો ર્મયગાળો એ વિદ્યાર્થી ની ર્મજશવિ / આિિત / ર્ાંજોગો ને આધારે િધારે ઓછો ર્થઇ શકશે એને ફીર્ ના EMI ર્ાર્થે ર્રખામણી કરી શકાશે નવહ. ફીર્ ના EMI એ ફીર્ પે કરિાની ર્ગિિતા માટે ની વ્યિસ્ર્થા છે માટે કોર્સ કેટલો ાલ્યો છે કે કેટલો પૂરો ર્થયો એની ર્ાર્થે ફીર્ ના EMI ને ર્રખામણી કરી શકાશે નવહ જેની દરેક વિદ્યાર્થીઓ એ નોાંધ લેિી.
+                          </li>
+                          <li className="mb-3">
+                            જો ફીર્ ન ાં પેમેન્ટ ેક ર્થી કરાય ાં હોય અને ેક બાઉન્ર્ ર્થાય તો એના અલગ ર્થી <strong>Rs ૩૫૦/- આપિાના રહેશે</strong>.
+                          </li>
+                          <li className="mb-3">
+                            કોઈ વિદ્યાર્થી જો પૂરો મવહનો ફીર્ ના આપી શકે તો એને <strong>Rs ૧૨૦૦/- પેનલ્ટી ાજસ ના ભરિાના રહેશે</strong> જે કોર્સ ાલ  કાયસ ના <strong>૬ મવહના પછી ર્થી જ ર્થઇ શકશે</strong>. ફીર્ પેમેન્ટ અર્થિા પેનલ્ટી ાજસર્સ ભયાસ િગર વિદ્યાર્થી વર્સ્ટમ માાં િરોપઆઉટ ર્થઇ શકે છે. કોઈ વિદ્યાર્થી પહેલા ૬ મવહના દરમ્યાન કોઈ એક મવહનો ફીર્ EMI ના આપે તો જે તે મવહના બાદ િરોપ આઉટ ગણાશે. અને એક્ટીિેશન ાજસર્સ ભયાસ બાદ ફરી ર્થી બે આપી શકાશે.
+                          </li>
+                          <li className="mb-3">
+                            કોર્સ દરમ્યાન ર્ાંજોગોિર્ાત લાાંબી રજા લેિાની ર્થશે તો ફીર્ ના EMI બાંધ કરી શકાશે નવહ. કોર્સ નો ર્મયગાળો લીધેલી રજા મ જબ િધી જશે.
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section>
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Technical Help</h2>
+                        <ol className="list-decimal list-inside space-y-3 ml-4" start={15}>
+                          <li className="mb-3">
+                            દરેક વિદ્યાર્થી એ ફેકલ્ટી ની માંજૂરી ર્થી રજા લઇ શકાશે જેના માટે અલગ બેકઅપ શીખિિા માાં આિશે પણ માંજૂરી િગર ની રજા માટે બેકઅપ ની વ્યિસ્ર્થા ર્થઇ શકશે નવહ.
+                          </li>
+                          <li className="mb-3">
+                            કોઈ પણ વિદ્યાર્થી ને કોઈ ર્ોફ્ટિેર માાં િધારે મદદ ની જરૂર હોય તો એ ર્ોફ્ટિેર આખો કે અમ ક ટોવપક ફરી ર્થી જે ફેકલ્ટી ના ર્જેશન મ જબ કરિા માાં આિશે જેના માટે કોઈ એક્ર્ટરા પેમેન્ટ આપિાન ાં રહેત ાં નર્થી.
+                          </li>
+                          <li className="mb-3">
+                            એકિાર કોર્સ કયાસ બાદ <strong>Lifetime કોઈ પણ પ્રકાર ની Technical મદદ માટે આપ ક્યારેય પણ institute પર આિી શકો છો</strong>. જે અમારા તમામ વિધાર્થી માટે <strong>વનિઃશ લ્ક રહેશે</strong>.
+                          </li>
+                        </ol>
+                      </section>
+
+                      <section className="mt-8 p-4 bg-gray-50 rounded border border-gray-200">
+                        <p className="mb-4 text-sm">
+                          કોર્સ ના એિવમશન િખતે જો આપણે કોઈ ોક્કર્ પ્રકાર ન ાં કવમટમેન્ટ અપાય ાં હોય તો એ અહીયાં ા જણાિિ ાં.
+                        </p>
+                        <div className="border-b-2 border-gray-400 mb-2"></div>
+                        <div className="border-b-2 border-gray-400 mb-2"></div>
+                        <div className="border-b-2 border-gray-400 mb-4"></div>
+                      </section>
+
+                      <section className="mt-8 space-y-4">
+                        <div className="flex gap-8">
+                          <div className="flex-1">
+                            <p className="mb-2"><strong>નામ:</strong></p>
+                            <div className="border-b-2 border-gray-400 mb-4"></div>
+                          </div>
+                          <div className="flex-1">
+                            <p className="mb-2"><strong>કોર્સ ન ાં નામ:</strong></p>
+                            <div className="border-b-2 border-gray-400 mb-4"></div>
+                          </div>
+                        </div>
+                        <p className="mt-6 mb-4">
+                          મને ઉપર મ જબ તમામ વનયમો ની વિસ્તૃત જાણકારી આપિામાાં આિી છે અને મને તે બાંધનકતાસ છે.
+                        </p>
+                        <div className="mt-8">
+                          <p className="mb-2"><strong>વિદ્યાર્થી ની ર્હી / તારીખ</strong></p>
+                          <div className="border-b-2 border-gray-400 w-48"></div>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer with I Agree Button */}
+              <div className="px-6 py-4 border-t border-gray-200 bg-white">
+                {(() => {
+                  const status = orientationStatusMap[orientationStudentId];
+                  const englishAccepted = status?.english || false;
+                  const gujaratiAccepted = status?.gujarati || false;
+                  const currentAccepted =
+                    activeOrientationTab === 'english' ? englishAccepted : gujaratiAccepted;
+                  const isEligible = status?.isEligible || false;
+
+                  return (
+                    <div className="flex justify-between items-center">
+                      <div>
+                        {isEligible ? (
+                          <span className="text-green-600 font-semibold">
+                            ✓ Student is eligible (Orientation accepted)
+                          </span>
+                        ) : (
+                          <span className="text-yellow-600 font-semibold">
+                            ⏳ Pending approval - Please accept orientation
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (!currentAccepted) {
+                            acceptOrientationMutation.mutate({
+                              studentId: orientationStudentId,
+                              language:
+                                activeOrientationTab === 'english'
+                                  ? OrientationLanguage.ENGLISH
+                                  : OrientationLanguage.GUJARATI,
+                            });
+                          } else {
+                            alert('This orientation has already been accepted.');
+                          }
+                        }}
+                        disabled={currentAccepted || acceptOrientationMutation.isPending}
+                        className={`px-6 py-2 rounded-lg font-semibold transition-colors ${
+                          currentAccepted
+                            ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                            : acceptOrientationMutation.isPending
+                            ? 'bg-orange-400 text-white cursor-wait'
+                            : 'bg-orange-600 text-white hover:bg-orange-700'
+                        }`}
+                      >
+                        {currentAccepted ? '✓ Accepted' : acceptOrientationMutation.isPending ? 'Processing...' : 'I Agree'}
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
           </div>
         </div>
       )}
