@@ -40,13 +40,15 @@ export interface CreateFacultyRequest {
   userId: number;
   expertise?: string;
   availability?: string;
+  documents?: any;
+  softwareProficiency?: string;
 }
 
 export interface CreateFacultyResponse {
   status: string;
   message: string;
   data: {
-    facultyProfile: {
+    facultyProfile?: {
       id: number;
       userId: number;
       expertise?: string;
@@ -55,6 +57,7 @@ export interface CreateFacultyResponse {
       createdAt: string;
       updatedAt: string;
     };
+    user?: FacultyUser;
   };
 }
 
@@ -70,7 +73,7 @@ export const facultyAPI = {
     const response = await api.post<CreateFacultyResponse>('/faculty', data);
     return response.data;
   },
-  updateFacultyProfile: async (userId: number, data: { expertise?: string; availability?: string }): Promise<CreateFacultyResponse> => {
+  updateFacultyProfile: async (userId: number, data: { expertise?: string; availability?: string; documents?: any; softwareProficiency?: string; dateOfBirth?: string }): Promise<CreateFacultyResponse> => {
     const response = await api.put<CreateFacultyResponse>(`/users/${userId}/faculty-profile`, data);
     return response.data;
   },
