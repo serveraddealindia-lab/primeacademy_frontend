@@ -22,30 +22,62 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Check if user is already logged in
-    const token = localStorage.getItem('token');
-    if (token) {
-      fetchUser();
-    } else {
-      setLoading(false);
-    }
-  }, []);
+  const [, setError] = useState<Error | null>(null);
 
   const fetchUser = async () => {
     try {
       const response = await api.get('/auth/me');
-      if (response.data.status === 'success') {
+      if (response && response.data && response.data.status === 'success' && response.data.data && response.data.data.user) {
         setUser({ ...response.data.data.user, userId: response.data.data.user.id });
+        setError(null);
+      } else {
+        console.warn('Invalid response structure from /auth/me:', response?.data);
+        localStorage.removeItem('token');
+        setError(null); // Not really an error, just invalid token
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch user:', error);
-      localStorage.removeItem('token');
+      setError(error);
+      // Only remove token if it's an auth error, not a network error
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        localStorage.removeItem('token');
+      }
+      // Don't throw - just set loading to false
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    let cancelled = false;
+    
+    const initAuth = async () => {
+      try {
+        // Check if user is already logged in
+        const token = localStorage.getItem('token');
+        if (token && !cancelled) {
+          await fetchUser();
+        } else if (!cancelled) {
+          setLoading(false);
+        }
+      } catch (err: any) {
+        console.error('Error initializing auth:', err);
+        if (isMounted && !cancelled) {
+          setError(err);
+          setLoading(false);
+        }
+      }
+    };
+    
+    initAuth();
+    
+    return () => {
+      cancelled = true;
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {

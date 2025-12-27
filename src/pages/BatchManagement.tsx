@@ -3,31 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
-import { batchAPI, Batch, UpdateBatchRequest } from '../api/batch.api';
-import { facultyAPI } from '../api/faculty.api';
-import { studentAPI } from '../api/student.api';
+import { batchAPI, Batch } from '../api/batch.api';
 import { reportAPI } from '../api/report.api';
-
-const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-interface DaySchedule {
-  startTime: string;
-  endTime: string;
-}
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 export const BatchManagement: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [daySchedules, setDaySchedules] = useState<Record<string, DaySchedule>>({});
-  const [applyToAll, setApplyToAll] = useState(false);
-  const [selectedFaculty, setSelectedFaculty] = useState<number[]>([]);
-  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
-  const [isLoadingEditBatch, setIsLoadingEditBatch] = useState(false);
   const [activeTab, setActiveTab] = useState<'batches' | 'available-students' | 'enrolled-not-started' | 'multiple-courses' | 'on-leave'>('batches');
+  const [batchStatusFilter, setBatchStatusFilter] = useState<'all' | 'past' | 'current' | 'complete'>('all');
 
   // Fetch batches
   const { data: batchesData, isLoading } = useQuery({
@@ -35,68 +22,31 @@ export const BatchManagement: React.FC = () => {
     queryFn: () => batchAPI.getAllBatches(),
   });
 
-  // Fetch all faculty
-  const { data: facultyData, isLoading: isLoadingFaculty } = useQuery({
-    queryKey: ['faculty'],
-    queryFn: () => facultyAPI.getAllFaculty(1000),
-  });
-
-  // Fetch all students
-  const { data: studentsData, isLoading: isLoadingStudents } = useQuery({
-    queryKey: ['students'],
-    queryFn: () => studentAPI.getAllStudents(),
-  });
 
   // Fetch students without batch
   const { data: availableStudentsData, isLoading: isLoadingAvailableStudents } = useQuery({
     queryKey: ['students-without-batch'],
     queryFn: () => reportAPI.getStudentsWithoutBatch(),
-    enabled: activeTab === 'available-students',
   });
 
   // Fetch students enrolled but batch not started
   const { data: enrolledNotStartedData, isLoading: isLoadingEnrolledNotStarted } = useQuery({
     queryKey: ['students-enrolled-batch-not-started'],
     queryFn: () => reportAPI.getStudentsEnrolledBatchNotStarted(),
-    enabled: activeTab === 'enrolled-not-started',
   });
 
   // Fetch students with multiple courses conflict
   const { data: multipleCoursesData, isLoading: isLoadingMultipleCourses } = useQuery({
     queryKey: ['students-multiple-courses-conflict'],
     queryFn: () => reportAPI.getStudentsMultipleCoursesConflict(),
-    enabled: activeTab === 'multiple-courses',
   });
 
   // Fetch students on leave with pending batches
   const { data: onLeaveData, isLoading: isLoadingOnLeave } = useQuery({
     queryKey: ['students-on-leave-pending-batches'],
     queryFn: () => reportAPI.getStudentsOnLeavePendingBatches(),
-    enabled: activeTab === 'on-leave',
   });
 
-  const fetchBatchDetails = async (batchId: number): Promise<Batch> => {
-    const response = await batchAPI.getBatchById(batchId);
-    return response.data.batch;
-  };
-
-  const updateBatchMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: UpdateBatchRequest }) => batchAPI.updateBatch(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
-      queryClient.invalidateQueries({ queryKey: ['faculty-batches'] });
-      setIsEditModalOpen(false);
-      setSelectedBatch(null);
-      setDaySchedules({});
-      setApplyToAll(false);
-      setSelectedFaculty([]);
-      setSelectedStudents([]);
-      alert('Batch updated successfully!');
-    },
-    onError: (error: any) => {
-      alert(error.response?.data?.message || 'Failed to update batch');
-    },
-  });
 
   const deleteBatchMutation = useMutation({
     mutationFn: (id: number) => batchAPI.deleteBatch(id),
@@ -111,7 +61,45 @@ export const BatchManagement: React.FC = () => {
     },
   });
 
-  const batches = batchesData?.data || [];
+  const allBatches = batchesData?.data || [];
+  const [batchSearchQuery, setBatchSearchQuery] = useState('');
+
+  // Filter batches based on status filter and search query
+  const batches = allBatches.filter((batch) => {
+    // First filter by status (past, current, complete)
+    if (batchStatusFilter !== 'all') {
+      const startDate = new Date(batch.startDate);
+      const endDate = new Date(batch.endDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(0, 0, 0, 0);
+      
+      const isCompleted = endDate < today;
+      const isOngoing = startDate <= today && endDate >= today;
+      
+      if (batchStatusFilter === 'past') {
+        // Past batches: endDate < today
+        if (!isCompleted) return false;
+      } else if (batchStatusFilter === 'current') {
+        // Current/Ongoing batches: startDate <= today && endDate >= today
+        if (!isOngoing) return false;
+      } else if (batchStatusFilter === 'complete') {
+        // Complete batches: endDate < today (same as past)
+        if (!isCompleted) return false;
+      }
+    }
+    
+    // Then filter by search query
+    if (!batchSearchQuery.trim()) return true;
+    const query = batchSearchQuery.toLowerCase();
+    return (
+      batch.title?.toLowerCase().includes(query) ||
+      batch.software?.toLowerCase().includes(query) ||
+      batch.mode?.toLowerCase().includes(query) ||
+      batch.status?.toLowerCase().includes(query)
+    );
+  });
 
   const handleDownloadBatchesCSV = () => {
     if (batches.length === 0) {
@@ -123,6 +111,7 @@ export const BatchManagement: React.FC = () => {
     const headers = [
       'Batch ID',
       'Title',
+      'Course',
       'Software',
       'Mode',
       'Schedule',
@@ -146,7 +135,13 @@ export const BatchManagement: React.FC = () => {
       const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      
+      // Normalize dates to midnight for proper comparison
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(0, 0, 0, 0);
+      
       const isCompleted = endDate < today;
+      // Fixed: If start date is today or earlier AND end date is today or later, it's ongoing
       const isOngoing = startDate <= today && endDate >= today;
       const status = isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Upcoming';
       
@@ -175,11 +170,12 @@ export const BatchManagement: React.FC = () => {
       return [
         batch.id,
         batch.title || '',
+        batch.course?.name || '',
         batch.software || '',
         batch.mode || '',
         scheduleText,
-        startDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-        endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        formatDateDDMMYYYY(startDate),
+        formatDateDDMMYYYY(endDate),
         durationDays,
         status,
         batch.maxCapacity || '',
@@ -188,7 +184,7 @@ export const BatchManagement: React.FC = () => {
         studentEmails,
         batch.assignedFaculty?.length || 0,
         facultyNames,
-        batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : ''
+        batch.createdAt ? formatDateDDMMYYYY(batch.createdAt) : ''
       ];
     });
 
@@ -219,8 +215,8 @@ export const BatchManagement: React.FC = () => {
       ['Batch', 'Software', batch.software || '-'],
       ['Batch', 'Mode', batch.mode],
       ['Batch', 'Status', batch.status || '-'],
-      ['Batch', 'Start Date', new Date(batch.startDate).toLocaleDateString()],
-      ['Batch', 'End Date', new Date(batch.endDate).toLocaleDateString()],
+      ['Batch', 'Start Date', formatDateDDMMYYYY(batch.startDate)],
+      ['Batch', 'End Date', formatDateDDMMYYYY(batch.endDate)],
       ['Batch', 'Max Capacity', batch.maxCapacity?.toString() || '-'],
     ];
 
@@ -270,82 +266,8 @@ export const BatchManagement: React.FC = () => {
     navigate(`/batches/${batch.id}`);
   };
 
-  const handleEdit = async (batch: Batch) => {
-    setIsLoadingEditBatch(true);
-    try {
-      const detailedBatch = await fetchBatchDetails(batch.id);
-      setSelectedBatch(detailedBatch);
-      setDaySchedules(detailedBatch.schedule || {});
-      setApplyToAll(false);
-      const assignedFacultyIds = detailedBatch.assignedFaculty?.map((f) => f.id) || [];
-      setSelectedFaculty(assignedFacultyIds);
-      const enrolledStudentIds =
-        detailedBatch.enrollments
-          ?.map((enrollment) => enrollment.student?.id ?? enrollment.id)
-          .filter((id): id is number => typeof id === 'number') || [];
-      setSelectedStudents(enrolledStudentIds);
-      setIsEditModalOpen(true);
-    } catch (error: any) {
-      console.error('Failed to load batch details for editing', error);
-      alert(error?.response?.data?.message || 'Failed to load batch details for editing. Please try again.');
-    } finally {
-      setIsLoadingEditBatch(false);
-    }
-  };
-
-  const handleToggleFaculty = (facultyId: number) => {
-    setSelectedFaculty(prev =>
-      prev.includes(facultyId)
-        ? prev.filter(id => id !== facultyId)
-        : [...prev, facultyId]
-    );
-  };
-
-  const handleToggleStudent = (studentId: number) => {
-    setSelectedStudents(prev =>
-      prev.includes(studentId)
-        ? prev.filter(id => id !== studentId)
-        : [...prev, studentId]
-    );
-  };
-
-  const handleDayToggle = (day: string) => {
-    setDaySchedules(prev => {
-      if (prev[day]) {
-        const newSchedules = { ...prev };
-        delete newSchedules[day];
-        return newSchedules;
-      } else {
-        return {
-          ...prev,
-          [day]: { startTime: '', endTime: '' }
-        };
-      }
-    });
-  };
-
-  const handleTimeChange = (day: string, field: 'startTime' | 'endTime', value: string) => {
-    setDaySchedules(prev => {
-      const updated = { ...prev };
-      
-      if (applyToAll) {
-        // Apply to all selected days
-        Object.keys(prev).forEach(d => {
-          updated[d] = {
-            ...prev[d],
-            [field]: value
-          };
-        });
-      } else {
-        // Apply only to the current day
-        updated[day] = {
-          ...prev[day],
-          [field]: value
-        };
-      }
-      
-      return updated;
-    });
+  const handleEdit = (batch: Batch) => {
+    navigate(`/batches/${batch.id}/edit`);
   };
 
   const handleDelete = (batch: Batch) => {
@@ -359,39 +281,10 @@ export const BatchManagement: React.FC = () => {
     }
   };
 
-  const handleUpdateBatch = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedBatch) return;
-
-    // Validate faculty selection
-    if (selectedFaculty.length === 0) {
-      alert('Please select at least one faculty member to assign to this batch.');
-      return;
-    }
-
-    const formData = new FormData(e.currentTarget);
-    const data: UpdateBatchRequest = {
-      title: formData.get('title') as string || undefined,
-      software: formData.get('software') as string || undefined,
-      mode: formData.get('mode') as string || undefined,
-      startDate: formData.get('startDate') as string || undefined,
-      endDate: formData.get('endDate') as string || undefined,
-      maxCapacity: formData.get('maxCapacity') ? parseInt(formData.get('maxCapacity') as string) : undefined,
-      status: formData.get('status') as string || undefined,
-      schedule: Object.keys(daySchedules).length > 0 ? 
-        Object.fromEntries(
-          Object.entries(daySchedules).filter(([_, times]) => times.startTime && times.endTime)
-        ) : undefined,
-      facultyIds: selectedFaculty,
-      studentIds: selectedStudents,
-    };
-    updateBatchMutation.mutate({ id: selectedBatch.id, data });
-  };
-
   if (isLoading) {
     return (
       <Layout>
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto p-4 md:p-6">
           <div className="flex justify-center items-center min-h-screen">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
           </div>
@@ -402,15 +295,15 @@ export const BatchManagement: React.FC = () => {
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
         <div className="bg-white shadow-xl rounded-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
-            <div className="flex justify-between items-center">
+          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-4 md:px-8 py-4 md:py-6">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-white">Batch Management</h1>
-                <p className="mt-2 text-orange-100">Manage training batches</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">Batch Management</h1>
+                <p className="mt-2 text-sm md:text-base text-orange-100">Manage training batches</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-2 md:gap-3 w-full lg:w-auto">
                 {batches.length > 0 && (
                   <button
                     onClick={handleDownloadBatchesCSV}
@@ -435,10 +328,10 @@ export const BatchManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6">
+          <div className="p-4 md:p-6">
             {/* Tabs */}
-            <div className="mb-6 border-b border-gray-200">
-              <nav className="-mb-px flex space-x-4 overflow-x-auto">
+            <div className="mb-4 md:mb-6 border-b border-gray-200">
+              <nav className="-mb-px flex space-x-2 md:space-x-4 overflow-x-auto">
                 <button
                   onClick={() => setActiveTab('batches')}
                   className={`py-4 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
@@ -492,235 +385,396 @@ export const BatchManagement: React.FC = () => {
               </nav>
             </div>
 
-            {isLoadingEditBatch && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-lg flex items-center gap-2">
-                <svg className="w-4 h-4 animate-spin text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                </svg>
-                <span>Loading batch details...</span>
-              </div>
-            )}
 
             {activeTab === 'batches' && (
               <>
+                {/* Batch Status Filter Tabs */}
+                <div className="mb-4 border-b border-gray-200">
+                  <nav className="-mb-px flex space-x-2 md:space-x-4 overflow-x-auto">
+                    <button
+                      onClick={() => setBatchStatusFilter('all')}
+                      className={`py-2 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                        batchStatusFilter === 'all'
+                          ? 'border-orange-500 text-orange-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      All Batches ({allBatches.length})
+                    </button>
+                    <button
+                      onClick={() => setBatchStatusFilter('past')}
+                      className={`py-2 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                        batchStatusFilter === 'past'
+                          ? 'border-orange-500 text-orange-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      Past ({allBatches.filter((b) => {
+                        const endDate = new Date(b.endDate);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        endDate.setHours(0, 0, 0, 0);
+                        return endDate < today;
+                      }).length})
+                    </button>
+                    <button
+                      onClick={() => setBatchStatusFilter('current')}
+                      className={`py-2 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                        batchStatusFilter === 'current'
+                          ? 'border-orange-500 text-orange-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      Current/Ongoing ({allBatches.filter((b) => {
+                        const startDate = new Date(b.startDate);
+                        const endDate = new Date(b.endDate);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        startDate.setHours(0, 0, 0, 0);
+                        endDate.setHours(0, 0, 0, 0);
+                        return startDate <= today && endDate >= today;
+                      }).length})
+                    </button>
+                    <button
+                      onClick={() => setBatchStatusFilter('complete')}
+                      className={`py-2 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
+                        batchStatusFilter === 'complete'
+                          ? 'border-orange-500 text-orange-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      Complete ({allBatches.filter((b) => {
+                        const endDate = new Date(b.endDate);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        endDate.setHours(0, 0, 0, 0);
+                        return endDate < today;
+                      }).length})
+                    </button>
+                  </nav>
+                </div>
+
+                {/* Search Bar */}
+                <div className="mb-4">
+                  <div className="relative max-w-md">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search batches by title, software, mode, or status..."
+                      value={batchSearchQuery}
+                      onChange={(e) => setBatchSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    {batchSearchQuery && (
+                      <button
+                        onClick={() => setBatchSearchQuery('')}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {(batchSearchQuery || batchStatusFilter !== 'all') && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Showing {batches.length} of {allBatches.length} batches
+                      {batchStatusFilter !== 'all' && (
+                        <span className="ml-2 text-orange-600">
+                          (Filtered: {batchStatusFilter === 'past' ? 'Past' : batchStatusFilter === 'current' ? 'Current/Ongoing' : 'Complete'})
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+
                 {batches.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500 text-lg">No batches found</p>
+                <p className="text-gray-500 text-lg">
+                  {batchSearchQuery ? 'No batches found matching your search' : 'No batches found'}
+                </p>
+                {batchSearchQuery && (
+                  <button
+                    onClick={() => setBatchSearchQuery('')}
+                    className="mt-2 text-orange-600 hover:text-orange-700 text-sm"
+                  >
+                    Clear search
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Batch Title
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Software
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Mode
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Schedule/Time
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Start Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        End Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Duration
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Capacity
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Students
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {batches.map((batch) => {
-                      const startDate = new Date(batch.startDate);
-                      const endDate = new Date(batch.endDate);
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const daysRemaining = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                      const isCompleted = endDate < today;
-                      const isOngoing = startDate <= today && endDate >= today;
-                      const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-                      
-                      return (
-                        <tr key={batch.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{batch.title}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{batch.software || '-'}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500 capitalize">{batch.mode || '-'}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            {batch.schedule && Object.keys(batch.schedule).length > 0 ? (
-                              <div className="text-xs text-gray-600 space-y-1 max-w-xs">
-                                {Object.entries(batch.schedule).slice(0, 3).map(([day, times]: [string, any]) => (
-                                  <div key={day} className="truncate">
-                                    {day.substring(0, 3)}: {times.startTime} - {times.endTime}
-                                  </div>
-                                ))}
-                                {Object.keys(batch.schedule).length > 3 && (
-                                  <div className="text-gray-500 italic">
-                                    + {Object.keys(batch.schedule).length - 3} more days
-                                  </div>
-                                )}
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle sm:px-0">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          S.No
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Batch Title
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                          Course
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                          Software
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
+                          Mode
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden xl:table-cell">
+                          Schedule/Time
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Start Date
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
+                          End Date
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Duration
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden xl:table-cell">
+                          Capacity
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden xl:table-cell">
+                          Students
+                        </th>
+                        <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {batches.map((batch, index) => {
+                        const startDate = new Date(batch.startDate);
+                        const endDate = new Date(batch.endDate);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        
+                        // Normalize dates to midnight for proper comparison
+                        startDate.setHours(0, 0, 0, 0);
+                        endDate.setHours(0, 0, 0, 0);
+                        
+                        const daysRemaining = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        const isCompleted = endDate < today;
+                        // Fixed: If start date is today or earlier AND end date is today or later, it's ongoing
+                        const isOngoing = startDate <= today && endDate >= today;
+                        const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                        
+                        return (
+                          <tr key={batch.id} className="hover:bg-gray-50">
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900">{index + 1}</div>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900">{batch.title}</div>
+                              <div className="text-xs text-gray-500 md:hidden mt-1">
+                                {batch.course?.name || '-'} • {batch.software || '-'} • {batch.mode || '-'}
                               </div>
-                            ) : (
-                              <div className="text-sm text-gray-400">No schedule</div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {startDate.toLocaleDateString('en-US', { 
-                                year: 'numeric', 
-                                month: 'short', 
-                                day: 'numeric' 
-                              })}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {startDate.toLocaleDateString('en-US', { weekday: 'short' })}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {endDate.toLocaleDateString('en-US', { 
-                                year: 'numeric', 
-                                month: 'short', 
-                                day: 'numeric' 
-                              })}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {endDate.toLocaleDateString('en-US', { weekday: 'short' })}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
-                              {durationDays} {durationDays === 1 ? 'day' : 'days'}
-                            </div>
-                            {isOngoing && (
-                              <div className="text-xs text-blue-600 font-medium">
-                                {daysRemaining > 0 ? `${daysRemaining} days left` : 'Ends today'}
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900">
+                                {batch.course?.name || '-'}
                               </div>
-                            )}
-                            {isCompleted && (
-                              <div className="text-xs text-gray-500">
-                                Completed
-                              </div>
-                            )}
-                            {!isOngoing && !isCompleted && (
-                              <div className="text-xs text-orange-600 font-medium">
-                                Starts in {Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              isCompleted 
-                                ? 'bg-gray-100 text-gray-800' 
-                                : isOngoing 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-blue-100 text-blue-800'
-                            }`}>
-                              {isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Upcoming'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
-                              {batch.enrollments?.length || 0} / {batch.maxCapacity || '-'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            {batch.enrollments && batch.enrollments.length > 0 ? (
-                              <div className="max-w-xs">
-                                <div className="text-sm text-gray-900 font-medium mb-1">
-                                  {batch.enrollments.length} student{batch.enrollments.length !== 1 ? 's' : ''}
-                                </div>
-                                <div className="text-xs text-gray-600 space-y-1">
-                                  {batch.enrollments.slice(0, 3).map((enrollment: any, idx: number) => {
-                                    const studentName = enrollment.student?.name || enrollment.name || `Student ${idx + 1}`;
-                                    const studentEmail = enrollment.student?.email || enrollment.email || '';
-                                    return (
-                                      <div key={enrollment.id || enrollment.student?.id || idx} className="truncate" title={`${studentName}${studentEmail ? ` (${studentEmail})` : ''}`}>
-                                        • {studentName}
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap hidden md:table-cell">
+                              <div className="text-xs sm:text-sm text-gray-500">{batch.software || '-'}</div>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
+                              <div className="text-xs sm:text-sm text-gray-500 capitalize">{batch.mode || '-'}</div>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 hidden xl:table-cell">
+                              {batch.schedule && (Array.isArray(batch.schedule) ? batch.schedule.length > 0 : Object.keys(batch.schedule).length > 0) ? (
+                                <div className="text-xs text-gray-600 space-y-1 max-w-xs">
+                                  {(() => {
+                                    const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                                    
+                                    // Handle array format (numeric indices)
+                                    if (Array.isArray(batch.schedule)) {
+                                      const scheduleEntries = batch.schedule
+                                        .map((item: any, index: number) => {
+                                          if (item && typeof item === 'object' && item.startTime) {
+                                            return {
+                                              day: item.day || DAYS_OF_WEEK[index] || `Day ${index + 1}`,
+                                              times: item
+                                            };
+                                          }
+                                          return null;
+                                        })
+                                        .filter((item): item is { day: string; times: any } => item !== null && item.times && item.times.startTime);
+                                      
+                                      return scheduleEntries.slice(0, 3).map(({ day, times }) => (
+                                        <div key={day} className="truncate">
+                                          {day.substring(0, 3)}: {times.startTime} - {times.endTime}
+                                        </div>
+                                      ));
+                                    }
+                                    
+                                    // Handle object format with day names as keys
+                                    const scheduleObj = batch.schedule as Record<string, { startTime: string; endTime: string }>;
+                                    
+                                    // Sort schedule by day order (Monday through Sunday)
+                                    const sortedSchedule = DAYS_OF_WEEK
+                                      .filter(day => scheduleObj[day] && scheduleObj[day].startTime)
+                                      .map(day => ({
+                                        day,
+                                        times: scheduleObj[day]
+                                      }));
+                                    
+                                    // If no matches with standard day names, try to map numeric keys to days
+                                    const scheduleEntries = sortedSchedule.length > 0 
+                                      ? sortedSchedule 
+                                      : Object.entries(scheduleObj)
+                                          .filter(([_, times]) => times && times.startTime)
+                                          .map(([day, times]) => {
+                                            const dayIndex = parseInt(day);
+                                            if (!isNaN(dayIndex) && dayIndex >= 0 && dayIndex < DAYS_OF_WEEK.length) {
+                                              return {
+                                                day: DAYS_OF_WEEK[dayIndex],
+                                                times
+                                              };
+                                            }
+                                            return { day, times };
+                                          });
+                                    
+                                    return scheduleEntries.slice(0, 3).map(({ day, times }: { day: string; times: any }) => (
+                                      <div key={day} className="truncate">
+                                        {day.substring(0, 3)}: {times.startTime} - {times.endTime}
                                       </div>
-                                    );
-                                  })}
-                                  {batch.enrollments.length > 3 && (
+                                    ));
+                                  })()}
+                                  {(Array.isArray(batch.schedule) ? batch.schedule.length : Object.keys(batch.schedule).length) > 3 && (
                                     <div className="text-gray-500 italic">
-                                      + {batch.enrollments.length - 3} more
+                                      + {(Array.isArray(batch.schedule) ? batch.schedule.length : Object.keys(batch.schedule).length) - 3} more days
                                     </div>
                                   )}
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="text-sm text-gray-400">No students enrolled</div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleView(batch)}
-                                disabled={isLoadingEditBatch}
-                                className={`px-3 py-1 bg-blue-500 text-white rounded text-xs transition-colors ${
-                                  isLoadingEditBatch
-                                    ? 'opacity-60 cursor-not-allowed'
-                                    : 'hover:bg-blue-600'
-                                }`}
-                                title="View Batch"
-                              >
-                                View
-                              </button>
-                              {(user?.role === 'admin' || user?.role === 'superadmin') && (
-                                <>
-                                  <button
-                                    onClick={() => handleEdit(batch)}
-                                    disabled={isLoadingEditBatch}
-                                    className={`px-3 py-1 bg-orange-500 text-white rounded text-xs transition-colors ${
-                                      isLoadingEditBatch
-                                        ? 'opacity-60 cursor-not-allowed'
-                                        : 'hover:bg-orange-600'
-                                    }`}
-                                    title="Edit Batch"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(batch)}
-                                    className="px-3 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
-                                    title="Delete Batch"
-                                  >
-                                    Delete
-                                  </button>
-                                </>
+                              ) : (
+                                <div className="text-xs sm:text-sm text-gray-400">No schedule</div>
                               )}
-                            </div>
-                          </td>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900">
+                                {formatDateDDMMYYYY(startDate)}
+                              </div>
+                              <div className="text-xs text-gray-500 lg:hidden mt-1">
+                                End: {formatDateDDMMYYYY(endDate)}
+                              </div>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap hidden lg:table-cell">
+                              <div className="text-xs sm:text-sm font-medium text-gray-900">
+                                {formatDateDDMMYYYY(endDate)}
+                              </div>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4">
+                              <div className="text-xs sm:text-sm text-gray-500">
+                                {durationDays} {durationDays === 1 ? 'day' : 'days'}
+                              </div>
+                              {isOngoing && (
+                                <div className="text-xs text-blue-600 font-medium">
+                                  {daysRemaining > 0 ? `${daysRemaining} days left` : 'Ends today'}
+                                </div>
+                              )}
+                              {isCompleted && (
+                                <div className="text-xs text-gray-500">
+                                  Completed
+                                </div>
+                              )}
+                              {!isOngoing && !isCompleted && (
+                                <div className="text-xs text-orange-600 font-medium">
+                                  Starts in {Math.ceil((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))} days
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                isCompleted 
+                                  ? 'bg-gray-100 text-gray-800' 
+                                  : isOngoing 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {isCompleted ? 'Completed' : isOngoing ? 'Ongoing' : 'Upcoming'}
+                              </span>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap hidden xl:table-cell">
+                              <div className="text-xs sm:text-sm text-gray-500">
+                                {batch.enrollments?.length || 0} / {batch.maxCapacity || '-'}
+                              </div>
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 hidden xl:table-cell">
+                              {batch.enrollments && batch.enrollments.length > 0 ? (
+                                <div className="max-w-xs">
+                                  <div className="text-xs sm:text-sm text-gray-900 font-medium mb-1">
+                                    {batch.enrollments.length} student{batch.enrollments.length !== 1 ? 's' : ''}
+                                  </div>
+                                  <div className="text-xs text-gray-600 space-y-1">
+                                    {batch.enrollments.slice(0, 3).map((enrollment: any, idx: number) => {
+                                      const studentName = enrollment.student?.name || enrollment.name || `Student ${idx + 1}`;
+                                      const studentEmail = enrollment.student?.email || enrollment.email || '';
+                                      return (
+                                        <div key={enrollment.id || enrollment.student?.id || idx} className="truncate" title={`${studentName}${studentEmail ? ` (${studentEmail})` : ''}`}>
+                                          • {studentName}
+                                        </div>
+                                      );
+                                    })}
+                                    {batch.enrollments.length > 3 && (
+                                      <div className="text-gray-500 italic">
+                                        + {batch.enrollments.length - 3} more
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs sm:text-sm text-gray-400">No students enrolled</div>
+                              )}
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm font-medium">
+                              <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
+                                <button
+                                  onClick={() => handleView(batch)}
+                                  className="px-2 sm:px-3 py-1 bg-blue-500 text-white rounded text-xs transition-colors hover:bg-blue-600"
+                                  title="View Batch"
+                                >
+                                  View
+                                </button>
+                                {(user?.role === 'admin' || user?.role === 'superadmin') && (
+                                  <>
+                                    <button
+                                      onClick={() => handleEdit(batch)}
+                                      className="px-2 sm:px-3 py-1 bg-orange-500 text-white rounded text-xs transition-colors hover:bg-orange-600"
+                                      title="Edit Batch"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDelete(batch)}
+                                      className="px-2 sm:px-3 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
+                                      title="Delete Batch"
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-                )}
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+            )}
               </>
             )}
 
@@ -731,7 +785,7 @@ export const BatchManagement: React.FC = () => {
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
                     <p className="mt-4 text-gray-500">Loading available students...</p>
                   </div>
-                ) : availableStudentsData?.data.students.length === 0 ? (
+                ) : !availableStudentsData?.data?.students || availableStudentsData.data.students.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-gray-500 text-lg">All students are enrolled in batches</p>
                   </div>
@@ -758,7 +812,7 @@ export const BatchManagement: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {availableStudentsData?.data.students.map((student) => (
+                        {availableStudentsData?.data?.students?.map((student) => (
                           <tr key={student.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{student.name}</div>
@@ -788,7 +842,7 @@ export const BatchManagement: React.FC = () => {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm text-gray-500">
-                                {student.createdAt ? new Date(student.createdAt).toLocaleDateString() : '-'}
+                                {formatDateDDMMYYYY(student.createdAt)}
                               </div>
                             </td>
                           </tr>
@@ -810,7 +864,7 @@ export const BatchManagement: React.FC = () => {
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
                     <p className="mt-4 text-gray-500">Loading students...</p>
                   </div>
-                ) : enrolledNotStartedData?.data.students.length === 0 ? (
+                ) : !enrolledNotStartedData?.data?.students || enrolledNotStartedData.data.students.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-gray-500 text-lg">No students found enrolled in batches that haven't started yet</p>
                   </div>
@@ -833,7 +887,7 @@ export const BatchManagement: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {enrolledNotStartedData?.data.students.map((student) => (
+                        {enrolledNotStartedData?.data?.students?.map((student) => (
                           <tr key={student.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{student.name}</div>
@@ -849,10 +903,10 @@ export const BatchManagement: React.FC = () => {
                               <div className="text-xs text-gray-500">{student.batch.software || 'N/A'} • {student.batch.mode}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{new Date(student.batch.startDate).toLocaleDateString()}</div>
+                              <div className="text-sm text-gray-900">{formatDateDDMMYYYY(student.batch.startDate)}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-500">{new Date(student.enrollmentDate).toLocaleDateString()}</div>
+                              <div className="text-sm text-gray-500">{formatDateDDMMYYYY(student.enrollmentDate)}</div>
                             </td>
                           </tr>
                         ))}
@@ -873,7 +927,7 @@ export const BatchManagement: React.FC = () => {
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
                     <p className="mt-4 text-gray-500">Loading students...</p>
                   </div>
-                ) : multipleCoursesData?.data.students.length === 0 ? (
+                ) : !multipleCoursesData?.data?.students || multipleCoursesData.data.students.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-gray-500 text-lg">No students found with multiple course enrollments</p>
                   </div>
@@ -897,7 +951,7 @@ export const BatchManagement: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {multipleCoursesData?.data.students.map((student) => (
+                        {multipleCoursesData?.data?.students?.map((student) => (
                           <tr key={student.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{student.name}</div>
@@ -932,7 +986,7 @@ export const BatchManagement: React.FC = () => {
                                     <div className="font-medium text-gray-900">{batch.title}</div>
                                     <div className="text-gray-600">{batch.software || 'N/A'} • {batch.mode}</div>
                                     <div className="text-gray-500 text-xs mt-1">
-                                      {new Date(batch.startDate).toLocaleDateString()} - {new Date(batch.endDate).toLocaleDateString()}
+                                      {formatDateDDMMYYYY(batch.startDate)} - {formatDateDDMMYYYY(batch.endDate)}
                                     </div>
                                   </div>
                                 ))}
@@ -957,7 +1011,7 @@ export const BatchManagement: React.FC = () => {
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
                     <p className="mt-4 text-gray-500">Loading students...</p>
                   </div>
-                ) : onLeaveData?.data.students.length === 0 ? (
+                ) : !onLeaveData?.data?.students || onLeaveData.data.students.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-gray-500 text-lg">No students found on leave with pending batches</p>
                   </div>
@@ -979,7 +1033,7 @@ export const BatchManagement: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {onLeaveData?.data.students.map((student) => (
+                        {onLeaveData?.data?.students?.map((student) => (
                           <tr key={student.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{student.name}</div>
@@ -996,7 +1050,7 @@ export const BatchManagement: React.FC = () => {
                                   <div key={leave.id} className="p-2 bg-blue-50 rounded border border-blue-200">
                                     <div className="font-medium text-gray-900">{leave.batchTitle}</div>
                                     <div className="text-gray-600 text-xs">
-                                      {new Date(leave.startDate).toLocaleDateString()} - {new Date(leave.endDate).toLocaleDateString()}
+                                      {formatDateDDMMYYYY(leave.startDate)} - {formatDateDDMMYYYY(leave.endDate)}
                                     </div>
                                     {leave.reason && (
                                       <div className="text-gray-500 text-xs mt-1">Reason: {leave.reason}</div>
@@ -1012,7 +1066,7 @@ export const BatchManagement: React.FC = () => {
                                     <div className="font-medium text-gray-900">{batch.title}</div>
                                     <div className="text-gray-600">{batch.software || 'N/A'} • {batch.mode}</div>
                                     <div className="text-gray-500 text-xs mt-1">
-                                      {new Date(batch.startDate).toLocaleDateString()} - {new Date(batch.endDate).toLocaleDateString()}
+                                      {formatDateDDMMYYYY(batch.startDate)} - {formatDateDDMMYYYY(batch.endDate)}
                                     </div>
                                     {batch.isRunning && (
                                       <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
@@ -1038,307 +1092,21 @@ export const BatchManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Edit Batch Modal */}
-      {isEditModalOpen && selectedBatch && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold mb-4">Edit Batch</h2>
-            <form onSubmit={handleUpdateBatch}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
-                  <input
-                    type="text"
-                    name="title"
-                    defaultValue={selectedBatch.title}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Software</label>
-                  <input
-                    type="text"
-                    name="software"
-                    defaultValue={selectedBatch.software || ''}
-                    placeholder="e.g., Adobe Photoshop, Figma"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Mode *</label>
-                  <select
-                    name="mode"
-                    defaultValue={selectedBatch.mode}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="online">Online</option>
-                    <option value="offline">Offline</option>
-                    <option value="hybrid">Hybrid</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
-                    <input
-                      type="date"
-                      name="startDate"
-                      defaultValue={selectedBatch.startDate.split('T')[0]}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">End Date *</label>
-                    <input
-                      type="date"
-                      name="endDate"
-                      defaultValue={selectedBatch.endDate.split('T')[0]}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Capacity</label>
-                  <input
-                    type="number"
-                    name="maxCapacity"
-                    min="1"
-                    defaultValue={selectedBatch.maxCapacity || ''}
-                    placeholder="e.g., 30"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    name="status"
-                    defaultValue={selectedBatch.status || 'active'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Faculty Assignment Section */}
-              <div className="pt-4 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Assign Faculty <span className="text-red-500">*</span>
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">Select at least one faculty member to assign to this batch</p>
-                {facultyData?.data?.users && facultyData.data.users.length === 0 ? (
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      No faculty members found. Please create faculty users first.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
-                      {isLoadingFaculty ? (
-                        <div className="flex items-center justify-center py-4">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-                          <span className="ml-2 text-sm text-gray-500">Loading faculty...</span>
-                        </div>
-                      ) : (facultyData?.data?.users || []).length === 0 ? (
-                        <p className="text-sm text-gray-500 text-center py-4">No active faculty members found</p>
-                      ) : (
-                        (facultyData?.data?.users || [])
-                          .filter((fac: any) => fac.isActive !== false)
-                          .map((fac: any) => (
-                            <label key={fac.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={selectedFaculty.includes(fac.id)}
-                                onChange={() => handleToggleFaculty(fac.id)}
-                                className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500 mr-3"
-                              />
-                              <div>
-                                <span className="font-medium">{fac.name}</span>
-                                <span className="text-sm text-gray-600 ml-2">({fac.email})</span>
-                                {fac.phone && (
-                                  <span className="text-xs text-gray-500 ml-2">• {fac.phone}</span>
-                                )}
-                              </div>
-                            </label>
-                          ))
-                      )}
-                    </div>
-                    {selectedFaculty.length > 0 ? (
-                      <p className="mt-2 text-sm text-green-600 font-medium">
-                        ✓ {selectedFaculty.length} faculty member(s) selected
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm text-red-600">
-                        ⚠ Please select at least one faculty member
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Student Selection Section */}
-              <div className="pt-4 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Students (Optional)</h3>
-                <p className="text-sm text-gray-600 mb-4">Select students to enroll in this batch</p>
-                {isLoadingStudents ? (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-                    <span className="ml-2 text-sm text-gray-500">Loading students...</span>
-                  </div>
-                ) : !studentsData?.data?.students || studentsData.data.students.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">No students available</p>
-                ) : (
-                  <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
-                    {studentsData.data.students.map((student) => {
-                      const isChecked = selectedStudents.includes(student.id);
-                      return (
-                        <label
-                          key={student.id}
-                          className={`flex items-center p-2 rounded cursor-pointer ${
-                            isChecked ? 'bg-green-50 border border-green-200' : 'hover:bg-gray-50'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleStudent(student.id)}
-                            className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500 mr-3"
-                          />
-                          <div className="flex-1">
-                            <span className="font-medium">{student.name}</span>
-                            <span className="text-sm text-gray-600 ml-2">({student.email})</span>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-                {selectedStudents.length > 0 && (
-                  <p className="mt-2 text-sm text-green-600 font-medium">
-                    ✓ {selectedStudents.length} student(s) selected
-                  </p>
-                )}
-              </div>
-
-              {/* Schedule Section */}
-              <div className="pt-4 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Schedule (Optional)</h3>
-                <p className="text-sm text-gray-600 mb-4">Select days and set start/end times for each day</p>
-                
-                <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={applyToAll}
-                      onChange={(e) => setApplyToAll(e.target.checked)}
-                      className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                    />
-                    <span className="ml-2 text-sm font-medium text-gray-700">
-                      Apply same time to all selected days
-                    </span>
-                  </label>
-                  <p className="ml-6 mt-1 text-xs text-gray-600">
-                    When enabled, changing time on any day will update all selected days
-                  </p>
-                </div>
-                
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {DAYS_OF_WEEK.map((day) => {
-                    const isSelected = !!daySchedules[day];
-                    const schedule = daySchedules[day] || { startTime: '', endTime: '' };
-                    
-                    return (
-                      <div key={day} className="border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleDayToggle(day)}
-                              className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                            />
-                            <span className="ml-2 text-sm font-medium text-gray-700">{day}</span>
-                          </label>
-                        </div>
-                        
-                        {isSelected && (
-                          <div className="grid grid-cols-2 gap-3 mt-2 pl-6">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Start Time
-                              </label>
-                              <input
-                                type="time"
-                                value={schedule.startTime}
-                                onChange={(e) => handleTimeChange(day, 'startTime', e.target.value)}
-                                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">
-                                End Time
-                              </label>
-                              <input
-                                type="time"
-                                value={schedule.endTime}
-                                onChange={(e) => handleTimeChange(day, 'endTime', e.target.value)}
-                                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  type="submit"
-                  disabled={updateBatchMutation.isPending}
-                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50"
-                >
-                  {updateBatchMutation.isPending ? 'Updating...' : 'Update'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEditModalOpen(false);
-                    setSelectedBatch(null);
-                    setDaySchedules({});
-                    setApplyToAll(false);
-                    setSelectedFaculty([]);
-                    setSelectedStudents([]);
-                  }}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Edit Batch Modal - Removed - Now using dedicated page at /batches/:id/edit */}
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && selectedBatch && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-4 text-red-600">Delete Batch</h2>
             <p className="mb-4 text-gray-700">
               Are you sure you want to delete <strong>{selectedBatch.title}</strong>? This action cannot be undone.
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleConfirmDelete}
                 disabled={deleteBatchMutation.isPending}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 text-sm sm:text-base"
               >
                 {deleteBatchMutation.isPending ? 'Deleting...' : 'Delete'}
               </button>
@@ -1347,7 +1115,7 @@ export const BatchManagement: React.FC = () => {
                   setIsDeleteModalOpen(false);
                   setSelectedBatch(null);
                 }}
-                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors text-sm sm:text-base"
               >
                 Cancel
               </button>

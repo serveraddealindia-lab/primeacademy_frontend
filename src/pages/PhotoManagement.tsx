@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { userAPI, User } from '../api/user.api';
 import { uploadAPI } from '../api/upload.api';
 import { getImageUrl } from '../utils/imageUtils';
 
 export const PhotoManagement: React.FC = () => {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -26,17 +24,20 @@ export const PhotoManagement: React.FC = () => {
   const { data: usersData, isLoading } = useQuery({
     queryKey: ['users', roleFilter],
     queryFn: () => userAPI.getAllUsers(roleFilter !== 'all' ? { role: roleFilter } : {}),
-    onSuccess: (data) => {
-      // Debug: Log all users and their avatarUrls
-      console.log('👥 All users fetched:', data?.data?.users?.map((u: User) => ({
+  });
+
+  // Debug: Log all users and their avatarUrls
+  React.useEffect(() => {
+    if (usersData?.data?.users) {
+      console.log('👥 All users fetched:', usersData.data.users.map((u: User) => ({
         id: u.id,
         name: u.name,
         email: u.email,
         avatarUrl: u.avatarUrl,
         hasAvatar: !!u.avatarUrl
       })));
-    },
-  });
+    }
+  }, [usersData]);
 
   // Update user photo mutation
   const updateUserPhotoMutation = useMutation({
@@ -59,7 +60,7 @@ export const PhotoManagement: React.FC = () => {
 
   // Delete user photo mutation
   const deleteUserPhotoMutation = useMutation({
-    mutationFn: (userId: number) => userAPI.updateUser(userId, { avatarUrl: null }),
+    mutationFn: (userId: number) => userAPI.updateUser(userId, { avatarUrl: undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsDeleteModalOpen(false);
@@ -154,21 +155,21 @@ export const PhotoManagement: React.FC = () => {
     }
   };
 
-  const users = usersData?.data.users || [];
+  const users = usersData?.data?.users || [];
   
   // Debug: Log users with avatarUrl
   React.useEffect(() => {
-    const usersWithPhotos = users.filter(u => u.avatarUrl);
-    console.log('📸 Users with photos:', usersWithPhotos.map(u => ({
+    const usersWithPhotos = users.filter((u: User) => u.avatarUrl);
+    console.log('📸 Users with photos:', usersWithPhotos.map((u: User) => ({
       name: u.name,
       id: u.id,
       avatarUrl: u.avatarUrl,
-      fullUrl: getImageUrl(u.avatarUrl)
+      fullUrl: getImageUrl(u.avatarUrl || '')
     })));
   }, [users]);
   
   // Filter users based on search term
-  const filteredUsers = users.filter((user) => {
+  const filteredUsers = users.filter((user: User) => {
     const matchesSearch = 
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -177,7 +178,7 @@ export const PhotoManagement: React.FC = () => {
   });
 
   // Group users by role
-  const usersByRole = filteredUsers.reduce((acc, user) => {
+  const usersByRole = filteredUsers.reduce((acc: Record<string, User[]>, user: User) => {
     if (!acc[user.role]) {
       acc[user.role] = [];
     }
@@ -253,13 +254,13 @@ export const PhotoManagement: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-6">
-                {Object.entries(usersByRole).map(([role, roleUsers]) => (
+                {(Object.entries(usersByRole) as [string, User[]][]).map(([role, roleUsers]) => (
                   <div key={role} className="border border-gray-200 rounded-lg p-4">
                     <h2 className="text-lg font-semibold text-gray-800 mb-4 capitalize">
                       {role} ({roleUsers.length})
                     </h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {roleUsers.map((user) => (
+                      {roleUsers.map((user: User) => (
                         <div
                           key={user.id}
                           className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
@@ -355,8 +356,8 @@ export const PhotoManagement: React.FC = () => {
 
       {/* Upload Photo Modal */}
       {isUploadModalOpen && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Upload Photo for {selectedUser.name}</h2>
             
             {/* Preview */}
@@ -412,8 +413,8 @@ export const PhotoManagement: React.FC = () => {
 
       {/* Edit Photo Modal */}
       {isEditModalOpen && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Edit Photo for {selectedUser.name}</h2>
             
             {/* Current Photo Preview */}
@@ -475,8 +476,8 @@ export const PhotoManagement: React.FC = () => {
 
       {/* Delete Photo Modal */}
       {isDeleteModalOpen && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Delete Photo</h2>
             <p className="mb-4 text-gray-600">
               Are you sure you want to delete the photo for <strong>{selectedUser.name}</strong>?
@@ -517,8 +518,8 @@ export const PhotoManagement: React.FC = () => {
 
       {/* Bulk Upload Modal */}
       {isBulkUploadModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Bulk Photo Upload</h2>
             
             {/* File Selection */}
@@ -578,7 +579,7 @@ export const PhotoManagement: React.FC = () => {
                           value={item.user?.id || ''}
                           onChange={(e) => {
                             const userId = parseInt(e.target.value);
-                            const selectedUser = users.find((u) => u.id === userId);
+                            const selectedUser = users.find((u: User) => u.id === userId);
                             setBulkUploadFiles((prev) =>
                               prev.map((f, i) => (i === index ? { ...f, user: selectedUser || null } : f))
                             );
@@ -586,7 +587,7 @@ export const PhotoManagement: React.FC = () => {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                         >
                           <option value="">Select User...</option>
-                          {users.map((u) => (
+                          {users.map((u: User) => (
                             <option key={u.id} value={u.id}>
                               {u.name} ({u.email}) - {u.role}
                             </option>

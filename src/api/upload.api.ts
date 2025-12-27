@@ -23,11 +23,9 @@ export const uploadAPI = {
     const formData = new FormData();
     formData.append('files', file);
     
-    const response = await api.post<UploadResponse>('/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    // Don't set Content-Type - let browser set it automatically with boundary
+    // The axios interceptor will handle removing Content-Type for FormData
+    const response = await api.post<UploadResponse>('/upload', formData);
     return response.data;
   },
   
@@ -37,14 +35,13 @@ export const uploadAPI = {
       formData.append('files', file);
     });
     
-    const response = await api.post<UploadResponse>('/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    // Don't set Content-Type - let browser set it automatically with boundary
+    // The axios interceptor will handle removing Content-Type for FormData
+    const response = await api.post<UploadResponse>('/upload', formData);
     return response.data;
   },
 };
+
 
 
 

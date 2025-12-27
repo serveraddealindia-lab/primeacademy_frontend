@@ -73,6 +73,7 @@ export const CertificateManagement: React.FC = () => {
     studentDeclarationAccepted: false,
   });
   const [showDeclaration, setShowDeclaration] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch students
   const { data: studentsData, isLoading: isLoadingStudents } = useQuery({
@@ -167,8 +168,22 @@ export const CertificateManagement: React.FC = () => {
   };
 
   const students = studentsData?.data?.students || [];
-  const certificates = certificatesData?.data?.certificates || [];
+  const allCertificates = certificatesData?.data?.certificates || [];
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
+  // Filter certificates based on search query
+  const certificates = allCertificates.filter((certificate) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      certificate.student?.name?.toLowerCase().includes(query) ||
+      certificate.student?.email?.toLowerCase().includes(query) ||
+      certificate.courseName?.toLowerCase().includes(query) ||
+      certificate.certificateNumber?.toLowerCase().includes(query) ||
+      certificate.softwareCovered?.some((s: string) => s.toLowerCase().includes(query)) ||
+      certificate.grade?.toLowerCase().includes(query)
+    );
+  });
 
   // Show loading state
   if (!user) {
@@ -238,12 +253,12 @@ export const CertificateManagement: React.FC = () => {
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
         <div className="bg-white shadow-xl rounded-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
-            <div className="flex justify-between items-center">
+          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-4 md:px-8 py-4 md:py-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-white">Certificate Management</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">Certificate Management</h1>
                 <p className="mt-2 text-orange-100">Create and manage student certificates</p>
               </div>
               <button
@@ -256,15 +271,60 @@ export const CertificateManagement: React.FC = () => {
           </div>
 
           <div className="p-6">
+            {/* Search Bar */}
+            <div className="mb-4">
+              <div className="relative max-w-md">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search certificates by student, course, certificate number, or software..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  >
+                    <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              {searchQuery && (
+                <p className="mt-2 text-sm text-gray-600">
+                  Showing {certificates.length} of {allCertificates.length} certificates
+                </p>
+              )}
+            </div>
+
             {certificates.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500 text-lg">No certificates created yet.</p>
-                <button
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="mt-4 px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors"
-                >
-                  Create First Certificate
-                </button>
+                <p className="text-gray-500 text-lg">
+                  {searchQuery ? 'No certificates found matching your search' : 'No certificates created yet.'}
+                </p>
+                {!searchQuery && (
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="mt-4 px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors"
+                  >
+                    Create First Certificate
+                  </button>
+                )}
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="mt-2 text-orange-600 hover:text-orange-700 text-sm"
+                  >
+                    Clear search
+                  </button>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">

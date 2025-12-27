@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { attendanceAPI, PunchInRequest, PunchOutRequest } from '../api/attendance.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 export const StudentAttendance: React.FC = () => {
   const { user } = useAuth();
@@ -488,7 +489,7 @@ export const StudentAttendance: React.FC = () => {
                       {punches.map((punch) => (
                         <tr key={punch.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(punch.date).toLocaleDateString()}
+                            {formatDateDDMMYYYY(punch.date)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {punch.punchInAt ? new Date(punch.punchInAt).toLocaleTimeString() : '-'}

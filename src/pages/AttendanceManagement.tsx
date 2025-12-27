@@ -8,6 +8,7 @@ import { studentAPI } from '../api/student.api';
 import { facultyAPI, FacultyUser } from '../api/faculty.api';
 import { employeeAPI, Employee } from '../api/employee.api';
 import { attendanceAPI, Attendance } from '../api/attendance.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 type UserRoleFilter = 'student' | 'faculty' | 'employee';
 type StudentUserAttendance = { type: 'student'; rows: Attendance[] };
@@ -352,7 +353,7 @@ export const AttendanceManagement: React.FC = () => {
                     {userAttendanceData.rows.map((record) => (
                       <tr key={record.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 text-sm text-gray-900">
-                          {record.session?.date ? new Date(record.session.date).toLocaleDateString() : 'N/A'}
+                          {record.session?.date ? formatDateDDMMYYYY(record.session.date) : 'N/A'}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">{record.session?.topic || `Session #${record.sessionId}`}</td>
                         <td className="px-6 py-4 text-center">
@@ -408,7 +409,7 @@ export const AttendanceManagement: React.FC = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {(userAttendanceData.rows as PunchSummaryRow[]).map((row, index) => (
                       <tr key={`${row.date}-${index}`} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-900">{new Date(row.date).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">{formatDateDDMMYYYY(row.date)}</td>
                         <td className="px-6 py-4 text-sm text-gray-600">{row.punchInAt ? new Date(row.punchInAt).toLocaleTimeString() : '-'}</td>
                         <td className="px-6 py-4 text-sm text-gray-600">{row.punchOutAt ? new Date(row.punchOutAt).toLocaleTimeString() : '-'}</td>
                         <td className="px-6 py-4 text-sm text-gray-900 font-semibold">{row.hours}</td>

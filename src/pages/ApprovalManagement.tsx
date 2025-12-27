@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { approvalAPI, ChangeRequest, ApproveRequestRequest } from '../api/approval.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 export const ApprovalManagement: React.FC = () => {
   const { user } = useAuth();
@@ -111,7 +112,7 @@ export const ApprovalManagement: React.FC = () => {
                       </div>
                     )}
                     <p className="text-xs text-gray-500 mb-4">
-                      Created: {request.createdAt ? new Date(request.createdAt).toLocaleDateString() : '-'}
+                      Created: {formatDateDDMMYYYY(request.createdAt)}
                     </p>
                     {(user?.role === 'admin' || user?.role === 'superadmin') && request.status === 'pending' && (
                       <button
@@ -196,6 +197,7 @@ export const ApprovalManagement: React.FC = () => {
     </Layout>
   );
 };
+
 
 
 

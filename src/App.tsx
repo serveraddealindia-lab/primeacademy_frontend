@@ -8,6 +8,7 @@ import { BatchExtensionManagement } from './pages/BatchExtensionManagement';
 import { LeaveManagement } from './pages/LeaveManagement';
 import { BatchManagement } from './pages/BatchManagement';
 import { BatchCreate } from './pages/BatchCreate';
+import { BatchEdit } from './pages/BatchEdit';
 import { BatchDetails } from './pages/BatchDetails';
 import { FacultyManagement } from './pages/FacultyManagement';
 import { FacultyEdit } from './pages/FacultyEdit';
@@ -21,6 +22,7 @@ import { FacultyRegistration } from './pages/FacultyRegistration';
 import { SessionManagement } from './pages/SessionManagement';
 import { AttendanceManagement } from './pages/AttendanceManagement';
 import { UnifiedAttendance } from './pages/UnifiedAttendance';
+import { StudentAttendanceView } from './pages/StudentAttendanceView';
 import { PaymentManagement } from './pages/PaymentManagement';
 import { PortfolioManagement } from './pages/PortfolioManagement';
 import { ReportManagement } from './pages/ReportManagement';
@@ -30,6 +32,8 @@ import { RoleManagement } from './pages/RoleManagement';
 import { CertificateManagement } from './pages/CertificateManagement';
 import { BiometricSettings } from './pages/BiometricSettings';
 import { PhotoManagement } from './pages/PhotoManagement';
+import { CourseModuleManagement } from './pages/CourseModuleManagement';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -103,10 +107,26 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/batches/:id/edit"
+        element={
+          <ProtectedRoute>
+            <BatchEdit />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/batches/:id"
         element={
           <ProtectedRoute>
             <BatchDetails />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/course-modules"
+        element={
+          <ProtectedRoute>
+            <CourseModuleManagement />
           </ProtectedRoute>
         }
       />
@@ -159,14 +179,6 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/employees"
-        element={
-          <ProtectedRoute>
-            <EmployeeManagement />
-          </ProtectedRoute>
-        }
-      />
-      <Route
         path="/employees/register"
         element={
           <ProtectedRoute>
@@ -179,6 +191,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <EmployeeEdit />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/employees"
+        element={
+          <ProtectedRoute>
+            <EmployeeManagement />
           </ProtectedRoute>
         }
       />
@@ -203,6 +223,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <UnifiedAttendance />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student-attendance"
+        element={
+          <ProtectedRoute>
+            <StudentAttendanceView />
           </ProtectedRoute>
         }
       />
@@ -300,11 +328,13 @@ function AppRoutes() {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

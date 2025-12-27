@@ -1,4 +1,4 @@
-import React, { ReactNode, useState, useMemo } from 'react';
+import React, { ReactNode, useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 import { hasModuleAccess } from '../utils/rolePermissions';
@@ -10,17 +10,33 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // Initialize sidebar state from localStorage, default to true for desktop, false for mobile
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem('sidebarOpen');
+    if (saved !== null) {
+      return JSON.parse(saved);
+    }
+    // Default: open on desktop (lg breakpoint), closed on mobile
+    return window.innerWidth >= 1024;
+  });
+
+  // Persist sidebar state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('sidebarOpen', JSON.stringify(sidebarOpen));
+  }, [sidebarOpen]);
 
   // Navigation items with their corresponding module names for permission checking
   const allNavigationItems = [
     { name: 'Dashboard', href: '/dashboard', icon: '🏠', module: null }, // Dashboard is always accessible
     { name: 'Batches', href: '/batches', icon: '📚', module: 'batches' },
+    { name: 'Course Modules', href: '/course-modules', icon: '📖', module: 'batches' },
     { name: 'Students', href: '/students', icon: '👥', module: 'students' },
     { name: 'Faculty', href: '/faculty', icon: '👨‍🏫', module: 'faculty' },
     { name: 'Employees', href: '/employees', icon: '💼', module: 'employees' },
     { name: 'Attendance Management', href: '/attendance', icon: '✅', module: 'attendance' }, // Session-based attendance (admin/superadmin only)
     { name: 'Attendance', href: '/my-attendance', icon: '📸', module: 'attendance' }, // Unified attendance for faculty/employees
+    { name: 'My Attendance', href: '/student-attendance', icon: '📋', module: 'attendance' }, // Student attendance view (batch-wise, day-wise)
     { name: 'Payments', href: '/payments', icon: '💰', module: 'payments' },
     { name: 'Portfolios', href: '/portfolios', icon: '📁', module: 'portfolios' },
     { name: 'Reports', href: '/reports', icon: '📊', module: 'reports' },
@@ -40,14 +56,25 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       // Dashboard is always accessible
       if (item.name === 'Dashboard') return true;
       
+      // Course Modules - hide from students and employees
+      if (item.name === 'Course Modules') {
+        if (user?.role === 'student' || user?.role === 'employee') {
+          return false;
+        }
+        // For other roles, check module access
+        return item.module ? hasModuleAccess(user?.role, item.module) : false;
+      }
+      
       // Roles is only for superadmin
       if (item.name === 'Roles') {
         return user?.role === 'superadmin';
       }
       
       // Certificates is only for admin/superadmin
+      // TEMPORARILY HIDDEN
       if (item.name === 'Certificates') {
-        return user?.role === 'admin' || user?.role === 'superadmin';
+        return false; // Temporarily hidden
+        // return user?.role === 'admin' || user?.role === 'superadmin';
       }
       
       // Biometric Settings is only for admin/superadmin
@@ -64,6 +91,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       // Check by href to distinguish from session-based attendance
       if (item.href === '/my-attendance') {
         return (user?.role === 'employee' || user?.role === 'faculty') && hasModuleAccess(user?.role, 'attendance');
+      }
+      
+      // Student Attendance View - show only for students
+      if (item.href === '/student-attendance') {
+        return user?.role === 'student' && hasModuleAccess(user?.role, 'attendance');
       }
       
       // Session-based Attendance Management - admin/superadmin
@@ -92,11 +124,21 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={`${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } ${
           sidebarOpen ? 'w-64' : 'w-20'
-        } bg-white shadow-lg transition-all duration-300 ease-in-out fixed h-screen overflow-y-auto z-50`}
+        } bg-white shadow-lg transition-all duration-300 ease-in-out fixed h-screen overflow-y-auto z-50 lg:fixed`}
       >
         <div className="p-4">
           {/* Logo and Toggle */}
@@ -141,6 +183,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link
                   key={item.name}
                   to={item.href}
+                  onClick={() => {
+                    // Close sidebar on mobile when link is clicked
+                    if (window.innerWidth < 1024) {
+                      setSidebarOpen(false);
+                    }
+                  }}
                   className={`flex items-center px-4 py-3 rounded-lg transition-colors ${
                     isActive
                       ? 'bg-orange-100 text-orange-700 font-semibold'
@@ -176,15 +224,36 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </aside>
 
       {/* Main Content */}
-      <div className={`flex-1 ${sidebarOpen ? 'ml-64' : 'ml-20'} transition-all duration-300 min-h-screen`}>
+      <div className={`flex-1 transition-all duration-300 min-h-screen w-full ${
+        sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'
+      }`}>
         {/* Top Bar */}
-        <header className="bg-white shadow-sm sticky top-0 z-40">
-          <div className="px-6 py-4 flex items-center justify-between">
+        <header className="bg-white shadow-sm sticky top-0 z-30">
+          <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
             <div className="flex items-center">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors mr-2 lg:hidden"
+                aria-label="Toggle sidebar"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
               {!sidebarOpen && (
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors mr-4"
+                  className="hidden lg:block p-2 rounded-lg hover:bg-gray-100 transition-colors mr-4"
                 >
                   <svg
                     className="w-6 h-6 text-gray-600"
@@ -201,19 +270,19 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </svg>
                 </button>
               )}
-              <h2 className="text-xl font-semibold text-gray-800">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-800 truncate">
                 {navigation.find(item => location.pathname === item.href || (item.href !== '/dashboard' && location.pathname.startsWith(item.href)))?.name || 'Dashboard'}
               </h2>
             </div>
-            <div className="flex items-center space-x-4">
-              {!sidebarOpen && user && (
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              {user && (
                 <>
-                  <span className="text-sm text-gray-700">
+                  <span className="hidden sm:inline text-sm text-gray-700 truncate max-w-[150px]">
                     {user.name} ({user.role})
                   </span>
                   <button
                     onClick={logout}
-                    className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
+                    className="px-3 sm:px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
                   >
                     Logout
                   </button>
@@ -224,7 +293,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         </header>
 
         {/* Page Content */}
-        <main className="p-6 bg-gray-50 min-h-[calc(100vh-4rem)]">{children}</main>
+        <main className="p-3 sm:p-4 md:p-6 bg-gray-50 min-h-[calc(100vh-4rem)] overflow-y-auto">{children}</main>
       </div>
     </div>
   );

@@ -4,7 +4,9 @@ export interface Portfolio {
   id: number;
   studentId: number;
   batchId: number;
-  files: Record<string, string>;
+  files: Record<string, string> | string[] | null;
+  pdfUrl?: string | null;
+  youtubeUrl?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   approvedBy?: number;
   approvedAt?: string;

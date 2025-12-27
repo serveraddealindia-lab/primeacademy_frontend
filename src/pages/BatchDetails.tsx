@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Layout } from '../components/Layout';
 import { batchAPI, Batch } from '../api/batch.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
-// const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export const BatchDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -30,8 +31,8 @@ export const BatchDetails: React.FC = () => {
       ['Batch', 'Software', batch.software || '-'],
       ['Batch', 'Mode', batch.mode],
       ['Batch', 'Status', batch.status || '-'],
-      ['Batch', 'Start Date', new Date(batch.startDate).toLocaleDateString()],
-      ['Batch', 'End Date', new Date(batch.endDate).toLocaleDateString()],
+      ['Batch', 'Start Date', formatDateDDMMYYYY(batch.startDate)],
+      ['Batch', 'End Date', formatDateDDMMYYYY(batch.endDate)],
       ['Batch', 'Max Capacity', batch.maxCapacity?.toString() || '-'],
     ];
 
@@ -159,11 +160,11 @@ export const BatchDetails: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700">
                   <div>
                     <p className="text-xs uppercase text-gray-500">Start Date</p>
-                    <p className="font-medium">{new Date(batch.startDate).toLocaleDateString()}</p>
+                    <p className="font-medium">{formatDateDDMMYYYY(batch.startDate)}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase text-gray-500">End Date</p>
-                    <p className="font-medium">{new Date(batch.endDate).toLocaleDateString()}</p>
+                    <p className="font-medium">{formatDateDDMMYYYY(batch.endDate)}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase text-gray-500">Software</p>
@@ -180,20 +181,125 @@ export const BatchDetails: React.FC = () => {
 
               <div className="rounded-xl border border-gray-200 p-5 space-y-4">
                 <h4 className="text-lg font-semibold text-gray-900">Schedule</h4>
-                {batch.schedule && Object.keys(batch.schedule).length > 0 ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {Object.entries(batch.schedule).map(([day, times]) => (
-                      <div key={day} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
-                        <span className="font-medium text-gray-700">{day}</span>
-                        <span className="text-gray-600">
-                          {times.startTime} - {times.endTime}
-                        </span>
+                {(() => {
+                  // Handle null, undefined, or empty schedule
+                  if (!batch.schedule) {
+                    return (
+                      <div className="text-sm text-gray-500">
+                        <p>No schedule defined.</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Edit this batch to add a schedule.
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No schedule defined.</p>
-                )}
+                    );
+                  }
+
+                  // Handle empty object or empty array
+                  const isEmpty = Array.isArray(batch.schedule) 
+                    ? batch.schedule.length === 0
+                    : Object.keys(batch.schedule).length === 0;
+                  
+                  if (isEmpty) {
+                    return (
+                      <div className="text-sm text-gray-500">
+                        <p>No schedule defined.</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Edit this batch to add a schedule.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  let scheduleEntries: Array<{ day: string; times: { startTime: string; endTime: string } }> = [];
+
+                  // Handle array format (numeric indices)
+                  if (Array.isArray(batch.schedule)) {
+                    scheduleEntries = batch.schedule
+                      .map((item: any, index: number) => {
+                        // If item is an object with day and times
+                        if (item && typeof item === 'object' && (item.day || item.startTime)) {
+                          return {
+                            day: item.day || DAYS_OF_WEEK[index] || `Day ${index + 1}`,
+                            times: item.startTime ? { startTime: item.startTime, endTime: item.endTime } : item
+                          };
+                        }
+                        // If item is just times object
+                        if (item && item.startTime) {
+                          return {
+                            day: DAYS_OF_WEEK[index] || `Day ${index + 1}`,
+                            times: item
+                          };
+                        }
+                        return null;
+                      })
+                      .filter((item: any) => item !== null && item.times && item.times.startTime) as Array<{ day: string; times: { startTime: string; endTime: string } }>;
+                  } else {
+                    // Handle object format with day names as keys
+                    const scheduleObj = batch.schedule as Record<string, any>;
+                    
+                    // Sort schedule by day order (Monday through Sunday)
+                    const sortedSchedule = DAYS_OF_WEEK
+                      .filter(day => scheduleObj[day] && scheduleObj[day].startTime)
+                      .map(day => ({
+                        day,
+                        times: scheduleObj[day]
+                      }));
+                    
+                    // If no matches with standard day names, try to map numeric keys to days
+                    if (sortedSchedule.length > 0) {
+                      scheduleEntries = sortedSchedule;
+                    } else {
+                      const entries = Object.entries(scheduleObj);
+                      scheduleEntries = entries
+                        .filter(([_, times]) => {
+                          // Handle different time formats
+                          if (!times) return false;
+                          if (typeof times === 'object' && times.startTime) return true;
+                          return false;
+                        })
+                        .map(([day, times]) => {
+                          // If key is numeric, map to day name
+                          const dayIndex = parseInt(day);
+                          if (!isNaN(dayIndex) && dayIndex >= 0 && dayIndex < DAYS_OF_WEEK.length) {
+                            return {
+                              day: DAYS_OF_WEEK[dayIndex],
+                              times: typeof times === 'object' && times.startTime ? times : { startTime: '', endTime: '' }
+                            };
+                          }
+                          // Otherwise use the key as day name
+                          return {
+                            day: day,
+                            times: typeof times === 'object' && times.startTime ? times : { startTime: '', endTime: '' }
+                          };
+                        })
+                        .filter(item => item.times.startTime); // Only include entries with valid startTime
+                    }
+                  }
+
+                  if (scheduleEntries.length === 0) {
+                    return (
+                      <div className="text-sm text-gray-500">
+                        <p>No valid schedule entries found.</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Edit this batch to add or update the schedule.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {scheduleEntries.map(({ day, times }) => (
+                        <div key={day} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm hover:bg-gray-100 transition-colors">
+                          <span className="font-medium text-gray-700 capitalize">{day}</span>
+                          <span className="text-gray-600 font-mono">
+                            {times?.startTime || '-'} - {times?.endTime || '-'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -237,11 +343,23 @@ export const BatchDetails: React.FC = () => {
                       const studentName = enrollment.student?.name ?? enrollment.name ?? 'Unknown Student';
                       const studentEmail = enrollment.student?.email ?? enrollment.email ?? '-';
                       const studentPhone = enrollment.student?.phone ?? enrollment.phone;
+                      const isException = enrollment.enrollmentStatus === 'exception';
                       return (
-                        <div key={studentId} className="flex flex-col rounded-lg border border-gray-100 px-3 py-2 text-sm">
-                          <span className="font-semibold text-gray-900">{studentName}</span>
-                          <span className="text-gray-600">{studentEmail}</span>
-                          {studentPhone && <span className="text-gray-500">{studentPhone}</span>}
+                        <div key={studentId} className={`flex flex-col rounded-lg border px-3 py-2 text-sm ${
+                          isException ? 'border-amber-300 bg-amber-50' : 'border-gray-100'
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <span className="font-semibold text-gray-900">{studentName}</span>
+                              <span className="text-gray-600 ml-2">({studentEmail})</span>
+                              {studentPhone && <span className="text-gray-500 block text-xs">{studentPhone}</span>}
+                            </div>
+                            {isException && (
+                              <span className="ml-2 px-2 py-1 text-xs font-semibold bg-amber-200 text-amber-800 rounded">
+                                Exception
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}

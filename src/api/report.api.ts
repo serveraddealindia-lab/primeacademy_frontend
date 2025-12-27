@@ -250,6 +250,38 @@ export interface StudentsOnLeavePendingBatches {
   totalCount: number;
 }
 
+export interface StudentsWiseReport {
+  students: Array<{
+    id: number;
+    name: string;
+    email: string;
+    phone?: string;
+    avatarUrl?: string;
+    createdAt: string;
+    softwareList?: string[];
+    profileStatus?: string | null;
+    batches?: Array<{
+      id: number;
+      title: string;
+      software?: string | null;
+      mode: string;
+      startDate: string;
+      endDate: string;
+      status?: string | null;
+    }>;
+    enrollmentDate?: string | null;
+    payments?: Array<{
+      id: number;
+      amount: number;
+      status: string;
+      dueDate: string;
+      paidDate?: string | null;
+    }>;
+  }>;
+  totalCount: number;
+  filterType?: string;
+}
+
 export const reportAPI = {
   getStudentsWithoutBatch: async (): Promise<{ status: string; data: StudentsWithoutBatchReport }> => {
     const response = await api.get('/attendance-reports/students-without-batch');
@@ -281,6 +313,18 @@ export const reportAPI = {
   },
   getStudentsOnLeavePendingBatches: async (): Promise<{ status: string; data: StudentsOnLeavePendingBatches }> => {
     const response = await api.get('/attendance-reports/students-on-leave-pending-batches');
+    return response.data;
+  },
+  getStudentsWise: async (params?: {
+    filterType?: 'studentwise' | 'batchwise' | 'coursewise' | 'softwarewise' | 'paymentwise';
+    batchId?: number;
+    courseId?: number;
+    software?: string;
+    paymentStatus?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ status: string; data: StudentsWiseReport }> => {
+    const response = await api.get('/attendance-reports/students-wise', { params });
     return response.data;
   },
 };

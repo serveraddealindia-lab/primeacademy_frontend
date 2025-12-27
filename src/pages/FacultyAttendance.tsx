@@ -160,52 +160,75 @@ export const FacultyAttendance: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {facultyBatches?.map((batchItem) => {
-                const session = batchItem.activeSession;
-                const isOngoing = session && session.status === 'ongoing' && !session.actualEndAt;
-                return (
-                  <div key={batchItem.batch.id} className="border border-gray-200 rounded-lg p-5 space-y-4 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-xl font-semibold text-gray-900">{batchItem.batch.title}</h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Batch #{batchItem.batch.id}
-                        </p>
-                      </div>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          isOngoing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                        }`}
-                      >
-                        {isOngoing ? 'Session Active' : 'Idle'}
-                      </span>
-                    </div>
-
-                    <div className="text-sm text-gray-600">
-                      {session ? (
-                        <>
-                          <p>
-                            <span className="font-medium">Started:</span>{' '}
-                            {session.actualStartAt ? new Date(session.actualStartAt).toLocaleTimeString() : 'Not started'}
+              {(() => {
+                // Check if faculty has ANY active session across ALL batches
+                const hasAnyActiveSession = facultyBatches?.some((item) => {
+                  const session = item.activeSession;
+                  return session && session.status === 'ongoing' && !session.actualEndAt;
+                });
+                
+                return facultyBatches?.map((batchItem) => {
+                  const session = batchItem.activeSession;
+                  const isOngoing = session && session.status === 'ongoing' && !session.actualEndAt;
+                  // Can only start if this batch has no session AND no other batch has an active session
+                  const canStartSession = !session && !hasAnyActiveSession;
+                  
+                  return (
+                    <div key={batchItem.batch.id} className="border border-gray-200 rounded-lg p-5 space-y-4 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-xl font-semibold text-gray-900">{batchItem.batch.title}</h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            Batch #{batchItem.batch.id}
                           </p>
-                          <p>
-                            <span className="font-medium">Topic:</span> {session.topic || 'N/A'}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-gray-500">No session created today.</p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                      {!session && (
-                        <button
-                          onClick={() => handleStartSession(batchItem.batch.id)}
-                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                        </div>
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            isOngoing ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                          }`}
                         >
-                          Start Session
-                        </button>
-                      )}
+                          {isOngoing ? 'Session Active' : 'Idle'}
+                        </span>
+                      </div>
+
+                      <div className="text-sm text-gray-600">
+                        {session ? (
+                          <>
+                            <p>
+                              <span className="font-medium">Started:</span>{' '}
+                              {session.actualStartAt ? new Date(session.actualStartAt).toLocaleTimeString() : 'Not started'}
+                            </p>
+                            <p>
+                              <span className="font-medium">Topic:</span> {session.topic || 'N/A'}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-gray-500">No session created today.</p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        {!session && (
+                          <>
+                            <button
+                              onClick={() => handleStartSession(batchItem.batch.id)}
+                              disabled={!canStartSession}
+                              className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                canStartSession
+                                  ? 'bg-green-600 text-white hover:bg-green-700'
+                                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              }`}
+                              title={!canStartSession && hasAnyActiveSession ? 'You already have an active session running. Please end it before starting a new one.' : ''}
+                            >
+                              Start Session
+                            </button>
+                            {!canStartSession && hasAnyActiveSession && (
+                              <p className="text-xs text-red-600 mt-1 w-full">
+                                You have an active session in another batch. End it first.
+                              </p>
+                            )}
+                          </>
+                        )}
                       {session && (
                         <>
                           <button
@@ -225,7 +248,8 @@ export const FacultyAttendance: React.FC = () => {
                     </div>
                   </div>
                 );
-              })}
+              });
+              })()}
             </div>
           </div>
         </div>

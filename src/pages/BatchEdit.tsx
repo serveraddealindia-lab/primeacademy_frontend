@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
-import { batchAPI, CreateBatchRequest, SuggestedCandidate } from '../api/batch.api';
+import { batchAPI, UpdateBatchRequest, SuggestedCandidate } from '../api/batch.api';
 import { studentAPI } from '../api/student.api';
 import { facultyAPI } from '../api/faculty.api';
 import { courseAPI } from '../api/course.api';
@@ -16,7 +16,9 @@ interface DaySchedule {
   endTime: string;
 }
 
-export const BatchCreate: React.FC = () => {
+export const BatchEdit: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const batchId = id ? parseInt(id, 10) : null;
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -35,6 +37,14 @@ export const BatchCreate: React.FC = () => {
   const [endDateDisplay, setEndDateDisplay] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [batchStatus, setBatchStatus] = useState<string>('active');
+  const [isLoadingBatch, setIsLoadingBatch] = useState(true);
+
+  // Fetch batch details
+  const { data: batchData, isLoading: isLoadingBatchData } = useQuery({
+    queryKey: ['batch', batchId],
+    queryFn: () => batchAPI.getBatchById(batchId!),
+    enabled: !!batchId,
+  });
 
   // Fetch all students
   const { data: studentsData } = useQuery({
@@ -45,7 +55,7 @@ export const BatchCreate: React.FC = () => {
   // Fetch all faculty (with high limit to get all)
   const { data: facultyData, isLoading: isLoadingFaculty } = useQuery({
     queryKey: ['faculty'],
-    queryFn: () => facultyAPI.getAllFaculty(1000), // Get up to 1000 faculty
+    queryFn: () => facultyAPI.getAllFaculty(1000),
   });
 
   // Fetch all courses
@@ -54,16 +64,80 @@ export const BatchCreate: React.FC = () => {
     queryFn: () => courseAPI.getAllCourses(),
   });
 
-  const createBatchMutation = useMutation({
-    mutationFn: async (data: CreateBatchRequest) => batchAPI.createBatch(data),
+  // Initialize form data when batch is loaded
+  useEffect(() => {
+    if (batchData?.data?.batch) {
+      const batch = batchData.data.batch;
+      
+      // Set basic fields
+      setBatchStatus(batch.status || 'active');
+      setSelectedCourseId(batch.courseId || null);
+      
+      // Set schedule
+      if (batch.schedule) {
+        setDaySchedules(batch.schedule as Record<string, DaySchedule>);
+      }
+      
+      // Set faculty
+      if (batch.assignedFaculty && batch.assignedFaculty.length > 0) {
+        setSelectedFaculty(batch.assignedFaculty.map(f => f.id));
+      }
+      
+      // Set students and exceptions
+      if (batch.enrollments && batch.enrollments.length > 0) {
+        const studentIds: number[] = [];
+        const exceptionIds: number[] = [];
+        
+        batch.enrollments.forEach((enrollment: any) => {
+          const studentId = enrollment.student?.id ?? enrollment.id;
+          if (studentId) {
+            studentIds.push(studentId);
+            // Check if enrollment status is 'exception'
+            if (enrollment.status === 'exception' || enrollment.enrollmentStatus === 'exception') {
+              exceptionIds.push(studentId);
+            }
+          }
+        });
+        
+        setSelectedStudents(studentIds);
+        setExceptionStudentIds(exceptionIds);
+      }
+      
+      // Set software
+      if (batch.software) {
+        const softwareList = batch.software.split(',').map(s => s.trim()).filter(s => s);
+        const standardSoftwares = [
+          'Photoshop', 'Illustrator', 'InDesign', 'After Effects', 'Premiere Pro',
+          'Figma', 'Sketch', 'Blender', 'Maya', '3ds Max', 'Cinema 4D', 'Lightroom',
+          'CorelDRAW', 'AutoCAD', 'SolidWorks', 'Revit', 'SketchUp', 'Unity',
+          'Unreal Engine', 'DaVinci Resolve', 'Final Cut Pro', 'Procreate',
+          'Affinity Designer', 'Affinity Photo', 'Canva Pro'
+        ];
+        const selectedStandard = softwareList.filter(s => standardSoftwares.includes(s));
+        const otherSoftwares = softwareList.filter(s => !standardSoftwares.includes(s));
+        
+        setSelectedSoftwares(selectedStandard);
+        if (otherSoftwares.length > 0) {
+          setOtherSoftware(otherSoftwares.join(', '));
+          setShowOtherSoftwareInput(true);
+        }
+      }
+      
+      setIsLoadingBatch(false);
+    }
+  }, [batchData]);
+
+  const updateBatchMutation = useMutation({
+    mutationFn: async (data: UpdateBatchRequest) => batchAPI.updateBatch(batchId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batch', batchId] });
       queryClient.invalidateQueries({ queryKey: ['students'] });
-      alert('Batch created successfully!');
+      alert('Batch updated successfully!');
       navigate('/batches');
     },
     onError: (error: any) => {
-      alert(error.response?.data?.message || 'Failed to create batch');
+      alert(error.response?.data?.message || 'Failed to update batch');
     },
   });
 
@@ -87,7 +161,6 @@ export const BatchCreate: React.FC = () => {
       const updated = { ...prev };
       
       if (applyToAll) {
-        // Apply to all selected days
         Object.keys(prev).forEach(d => {
           updated[d] = {
             ...prev[d],
@@ -95,7 +168,6 @@ export const BatchCreate: React.FC = () => {
           };
         });
       } else {
-        // Apply only to the current day
         updated[day] = {
           ...prev[day],
           [field]: value
@@ -106,7 +178,7 @@ export const BatchCreate: React.FC = () => {
     });
   };
 
-  const handleCreateBatch = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdateBatch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
@@ -130,12 +202,12 @@ export const BatchCreate: React.FC = () => {
     let statusValue = (formData.get('status') as string) || batchStatus;
     const finalStatus = statusValue && statusValue.trim() ? statusValue.trim() : 'active';
 
-    const data: CreateBatchRequest = {
-      title: (formData.get('title') as string)?.trim() || '',
+    const data: UpdateBatchRequest = {
+      title: (formData.get('title') as string)?.trim() || undefined,
       software: softwareValue.trim(),
-      mode: (formData.get('mode') as string) || '',
-      startDate: (formData.get('startDate') as string) || '',
-      endDate: (formData.get('endDate') as string) || '',
+      mode: (formData.get('mode') as string) || undefined,
+      startDate: (formData.get('startDate') as string) || undefined,
+      endDate: (formData.get('endDate') as string) || undefined,
       maxCapacity: formData.get('maxCapacity') ? parseInt(formData.get('maxCapacity') as string) : undefined,
       status: finalStatus,
       schedule: Object.keys(daySchedules).length > 0 ? 
@@ -143,15 +215,12 @@ export const BatchCreate: React.FC = () => {
           Object.entries(daySchedules).filter(([_, times]) => times.startTime && times.endTime)
         ) : undefined,
       facultyIds: selectedFaculty,
-      studentIds: selectedStudents.length > 0 ? selectedStudents : undefined,
+      studentIds: selectedStudents, // Always send array, even if empty, so backend can process removals
       exceptionStudentIds: exceptionStudentIds.length > 0 ? exceptionStudentIds : undefined,
       courseId: selectedCourseId || null,
     };
     
-    // Debug log to verify status is being sent
-    console.log('Creating batch with status:', finalStatus, 'Full data:', data);
-    
-    createBatchMutation.mutate(data);
+    updateBatchMutation.mutate(data);
   };
 
   const handleGetSuggestions = async () => {
@@ -170,10 +239,8 @@ export const BatchCreate: React.FC = () => {
     // Get at least one faculty ID for the temporary batch
     let tempFacultyIds: number[] = [];
     if (selectedFaculty.length > 0) {
-      // Use selected faculty if available
       tempFacultyIds = selectedFaculty;
     } else if (facultyData?.data?.users && facultyData.data.users.length > 0) {
-      // Use the first available faculty
       tempFacultyIds = [facultyData.data.users[0].id];
     } else {
       alert('Please select at least one faculty member first, or ensure faculty data is loaded');
@@ -182,10 +249,9 @@ export const BatchCreate: React.FC = () => {
 
     // Create a temporary batch to get suggestions
     try {
-      // Get status from form or use state value, default to 'active'
       const statusValue = (formData.get('status') as string) || batchStatus || 'active';
       
-      const tempData: CreateBatchRequest = {
+      const tempData = {
         title: 'TEMP_FOR_SUGGESTIONS',
         software,
         mode: formData.get('mode') as string || 'online',
@@ -199,13 +265,10 @@ export const BatchCreate: React.FC = () => {
       const tempBatch = await batchAPI.createBatch(tempData);
       if (tempBatch.data.batch) {
         const suggestions = await batchAPI.suggestCandidates(tempBatch.data.batch.id);
-        console.log('Suggestions received:', suggestions);
         if (suggestions.data && suggestions.data.candidates) {
           setSuggestedCandidates(suggestions.data.candidates);
           setShowSuggestions(true);
-          // Don't show alert for empty results, just show the empty state message in UI
         } else {
-          console.error('No suggestions data received:', suggestions);
           setSuggestedCandidates([]);
           setShowSuggestions(true);
         }
@@ -249,7 +312,6 @@ export const BatchCreate: React.FC = () => {
   const handleToggleException = (studentId: number, isException: boolean) => {
     if (isException) {
       setExceptionStudentIds(prev => [...prev, studentId]);
-      // Also add to selected students if not already there
       if (!selectedStudents.includes(studentId)) {
         setSelectedStudents(prev => [...prev, studentId]);
       }
@@ -260,19 +322,35 @@ export const BatchCreate: React.FC = () => {
 
   const students = studentsData?.data.students || [];
   const faculty = facultyData?.data?.users || [];
+  const batch = batchData?.data?.batch;
 
   if (user?.role !== 'admin' && user?.role !== 'superadmin') {
     return (
       <Layout>
         <div className="max-w-7xl mx-auto">
           <div className="bg-white shadow-xl rounded-lg p-6">
-            <p className="text-red-600">You don't have permission to create batches.</p>
+            <p className="text-red-600">You don't have permission to edit batches.</p>
             <button
               onClick={() => navigate('/batches')}
               className="mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
             >
               Back to Batches
             </button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isLoadingBatchData || isLoadingBatch || !batch) {
+    return (
+      <Layout>
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white shadow-xl rounded-lg p-6">
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+              <span className="ml-3 text-gray-600">Loading batch details...</span>
+            </div>
           </div>
         </div>
       </Layout>
@@ -286,8 +364,8 @@ export const BatchCreate: React.FC = () => {
           <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
             <div className="flex justify-between items-center">
               <div>
-                <h1 className="text-3xl font-bold text-white">Create New Batch</h1>
-                <p className="mt-2 text-orange-100">Fill in the details to create a new training batch</p>
+                <h1 className="text-3xl font-bold text-white">Edit Batch</h1>
+                <p className="mt-2 text-orange-100">Update batch details and settings</p>
               </div>
               <button
                 onClick={() => navigate('/batches')}
@@ -299,7 +377,7 @@ export const BatchCreate: React.FC = () => {
           </div>
 
           <div className="p-8 max-h-[calc(100vh-12rem)] overflow-y-auto">
-            <form onSubmit={handleCreateBatch} className="space-y-6">
+            <form onSubmit={handleUpdateBatch} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -309,6 +387,7 @@ export const BatchCreate: React.FC = () => {
                     type="text"
                     name="title"
                     required
+                    defaultValue={batch.title}
                     placeholder="e.g., Digital Art Fundamentals - Batch 1"
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
@@ -414,7 +493,6 @@ export const BatchCreate: React.FC = () => {
                           const value = e.target.value;
                           setOtherSoftware(value);
                           if (value.trim()) {
-                            // Split by comma and add each software
                             const newSoftwares = value.split(',').map(s => s.trim()).filter(s => s);
                             setSelectedSoftwares(prev => {
                               const standardSoftwares = prev.filter(s => 
@@ -455,6 +533,7 @@ export const BatchCreate: React.FC = () => {
                   <select
                     name="mode"
                     required
+                    defaultValue={batch.mode}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   >
                     <option value="">Select mode</option>
@@ -472,6 +551,7 @@ export const BatchCreate: React.FC = () => {
                     type="date"
                     name="startDate"
                     required
+                    defaultValue={batch.startDate.split('T')[0]}
                     onChange={(e) => {
                       setStartDateDisplay(formatDateInputToDDMMYYYY(e.target.value));
                     }}
@@ -490,6 +570,7 @@ export const BatchCreate: React.FC = () => {
                     type="date"
                     name="endDate"
                     required
+                    defaultValue={batch.endDate.split('T')[0]}
                     onChange={(e) => {
                       setEndDateDisplay(formatDateInputToDDMMYYYY(e.target.value));
                     }}
@@ -508,6 +589,7 @@ export const BatchCreate: React.FC = () => {
                     type="number"
                     name="maxCapacity"
                     min="1"
+                    defaultValue={batch.maxCapacity || ''}
                     placeholder="e.g., 30"
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
@@ -724,6 +806,11 @@ export const BatchCreate: React.FC = () => {
                           <div>
                             <span className="font-medium">{student.name}</span>
                             <span className="text-sm text-gray-600 ml-2">({student.email})</span>
+                            {exceptionStudentIds.includes(student.id) && (
+                              <span className="ml-2 text-xs px-2 py-0.5 bg-amber-200 text-amber-800 rounded">
+                                Exception
+                              </span>
+                            )}
                           </div>
                         </label>
                       ))}
@@ -741,6 +828,11 @@ export const BatchCreate: React.FC = () => {
                   {selectedStudents.length > 0 && (
                     <p className="mt-2 text-sm text-gray-600">
                       {selectedStudents.length} student(s) selected
+                      {exceptionStudentIds.length > 0 && (
+                        <span className="ml-2 text-amber-600">
+                          ({exceptionStudentIds.length} as exception{exceptionStudentIds.length > 1 ? 's' : ''})
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>
@@ -822,10 +914,10 @@ export const BatchCreate: React.FC = () => {
               <div className="flex gap-4 pt-6 border-t border-gray-200">
                 <button
                   type="submit"
-                  disabled={createBatchMutation.isPending}
+                  disabled={updateBatchMutation.isPending}
                   className="flex-1 px-6 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {createBatchMutation.isPending ? 'Creating...' : 'Create Batch'}
+                  {updateBatchMutation.isPending ? 'Updating...' : 'Update Batch'}
                 </button>
                 <button
                   type="button"

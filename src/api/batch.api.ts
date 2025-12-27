@@ -9,6 +9,12 @@ export interface Batch {
   endDate: string;
   maxCapacity?: number;
   status?: string;
+  courseId?: number | null;
+  course?: {
+    id: number;
+    name: string;
+    software: string[];
+  } | null;
   schedule?: {
     [day: string]: {
       startTime: string;
@@ -84,6 +90,8 @@ export interface CreateBatchRequest {
   status?: string;
   facultyIds?: number[];
   studentIds?: number[];
+  exceptionStudentIds?: number[];
+  courseId?: number | null;
 }
 
 export interface UpdateBatchRequest {
@@ -100,8 +108,10 @@ export interface UpdateBatchRequest {
     };
   };
   status?: string;
+  courseId?: number | null;
   facultyIds?: number[];
   studentIds?: number[];
+  exceptionStudentIds?: number[];
 }
 
 export interface SuggestedCandidate {
@@ -109,10 +119,12 @@ export interface SuggestedCandidate {
   name: string;
   email: string;
   phone?: string;
-  status: 'available' | 'busy' | 'fees_overdue';
+  status: 'available' | 'busy' | 'fees_overdue' | 'pending_fees' | 'no_orientation';
   statusMessage: string;
   hasOverdueFees: boolean;
+  hasPendingFees?: boolean;
   totalOverdueAmount?: number;
+  totalPendingAmount?: number;
   conflictingBatches?: string[];
   conflictingSessions?: string[];
 }
@@ -126,6 +138,7 @@ export interface SuggestCandidatesResponse {
     summary: {
       available: number;
       busy: number;
+      pendingFees: number;
       feesOverdue: number;
     };
   };

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { attendanceAPI, PunchInRequest, PunchOutRequest } from '../api/attendance.api';
 import { sessionAPI, FacultyBatch, StudentAttendanceEntry, AttendanceOption, SessionSummary } from '../api/session.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 type AttendanceState = Record<number, AttendanceOption>;
 const ATTENDANCE_OPTIONS: AttendanceOption[] = ['present', 'absent', 'late'];
@@ -634,24 +635,32 @@ export const UnifiedAttendance: React.FC = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    {facultyBatches?.map((batchItem) => {
-                      const selectedBatchSession =
-                        selectedBatch && selectedBatch.batch.id === batchItem.batch.id
-                          ? selectedBatch.activeSession
-                          : null;
-                      const session =
-                        batchItem.activeSession ||
-                        optimisticSessions[batchItem.batch.id] ||
-                        selectedBatchSession;
-                      const isOngoing = session && session.status === 'ongoing' && !session.actualEndAt;
-                      const canStartSession = !session;
+                    {(() => {
+                      // Check if faculty has ANY active session across ALL batches
+                      const hasAnyActiveSession = facultyBatches?.some((item) => {
+                        const session = item.activeSession || optimisticSessions[item.batch.id];
+                        return session && session.status === 'ongoing' && !session.actualEndAt;
+                      });
+                      
+                      return facultyBatches?.map((batchItem) => {
+                        const selectedBatchSession =
+                          selectedBatch && selectedBatch.batch.id === batchItem.batch.id
+                            ? selectedBatch.activeSession
+                            : null;
+                        const session =
+                          batchItem.activeSession ||
+                          optimisticSessions[batchItem.batch.id] ||
+                          selectedBatchSession;
+                        const isOngoing = session && session.status === 'ongoing' && !session.actualEndAt;
+                        // Can only start if this batch has no session AND no other batch has an active session
+                        const canStartSession = !session && !hasAnyActiveSession;
                       
                       // Get schedule for today
                       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
                       const todaySchedule = batchItem.batch.schedule?.[dayNames[new Date().getDay()]];
                       
-                      return (
-                        <div key={batchItem.batch.id} className="border border-gray-200 rounded-lg p-5 space-y-4 shadow-sm">
+                        return (
+                          <div key={batchItem.batch.id} className="border border-gray-200 rounded-lg p-5 space-y-4 shadow-sm">
                           <div className="flex items-center justify-between">
                             <div>
                               <h3 className="text-xl font-semibold text-gray-900">{batchItem.batch.title}</h3>
@@ -689,20 +698,28 @@ export const UnifiedAttendance: React.FC = () => {
 
                           <div className="flex flex-wrap gap-3">
                             {!session && (
-                              <button
-                                onClick={() => {
-                                  const topic = prompt('Enter session topic (optional):');
-                                  startSessionMutation.mutate({ batchId: batchItem.batch.id, topicValue: topic || undefined });
-                                }}
-                                disabled={!canStartSession}
-                                className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
-                                  canStartSession
-                                    ? 'bg-green-600 text-white hover:bg-green-700'
-                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                }`}
-                              >
-                                Start Session
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => {
+                                    const topic = prompt('Enter session topic (optional):');
+                                    startSessionMutation.mutate({ batchId: batchItem.batch.id, topicValue: topic || undefined });
+                                  }}
+                                  disabled={!canStartSession}
+                                  className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
+                                    canStartSession
+                                      ? 'bg-green-600 text-white hover:bg-green-700'
+                                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  }`}
+                                  title={!canStartSession && hasAnyActiveSession ? 'You already have an active session running. Please end it before starting a new one.' : ''}
+                                >
+                                  Start Session
+                                </button>
+                                {!canStartSession && hasAnyActiveSession && (
+                                  <p className="text-xs text-red-600 mt-1 w-full">
+                                    You have an active session in another batch. End it first.
+                                  </p>
+                                )}
+                              </>
                             )}
                             {session && (
                               <>
@@ -731,7 +748,8 @@ export const UnifiedAttendance: React.FC = () => {
                           </button>
                         </div>
                       );
-                    })}
+                      });
+                    })()}
                   </div>
                 )}
 
@@ -829,8 +847,8 @@ export const UnifiedAttendance: React.FC = () => {
 
                 {/* Batch History Modal */}
                 {selectedBatchForHistory && (
-                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg p-4 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                       <div className="flex justify-between items-center mb-4">
                         <h2 className="text-2xl font-bold">Batch History</h2>
                         <button
@@ -856,7 +874,7 @@ export const UnifiedAttendance: React.FC = () => {
                               <div className="flex justify-between items-start mb-3">
                                 <div>
                                   <p className="font-semibold text-gray-900">
-                                    {new Date(session.date).toLocaleDateString()}
+                                    {formatDateDDMMYYYY(session.date)}
                                   </p>
                                   <p className="text-sm text-gray-600">
                                     {session.topic && `Topic: ${session.topic}`}
@@ -1172,8 +1190,8 @@ export const UnifiedAttendance: React.FC = () => {
 
                 {/* Break Reason Modal */}
                 {showBreakReasonModal && (
-                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
                       <h3 className="text-xl font-bold mb-4">Start Break</h3>
                       <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1290,7 +1308,7 @@ export const UnifiedAttendance: React.FC = () => {
                           return (
                             <tr key={punch.id} className="hover:bg-gray-50">
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {new Date(punch.date).toLocaleDateString()}
+                                {formatDateDDMMYYYY(punch.date)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {punch.punchInAt ? new Date(punch.punchInAt).toLocaleTimeString() : '-'}

@@ -94,5 +94,9 @@ export const paymentAPI = {
     });
     return response.data;
   },
+  generateReceipt: async (id: number): Promise<PaymentResponse> => {
+    const response = await api.post<PaymentResponse>(`/payments/${id}/generate-receipt`);
+    return response.data;
+  },
 };
 

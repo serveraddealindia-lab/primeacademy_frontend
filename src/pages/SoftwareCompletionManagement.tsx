@@ -5,6 +5,7 @@ import { Layout } from '../components/Layout';
 import { softwareCompletionAPI, SoftwareCompletion, SoftwareCompletionStatus, CreateCompletionRequest } from '../api/softwareCompletion.api';
 import { batchAPI } from '../api/batch.api';
 import { studentAPI } from '../api/student.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 export const SoftwareCompletionManagement: React.FC = () => {
   const { user } = useAuth();
@@ -12,6 +13,7 @@ export const SoftwareCompletionManagement: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedCompletion, setSelectedCompletion] = useState<SoftwareCompletion | null>(null);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch completions
   const { data: completionsData, isLoading } = useQuery({
@@ -51,9 +53,23 @@ export const SoftwareCompletionManagement: React.FC = () => {
     },
   });
 
-  const completions = completionsData?.data.completions || [];
+  const allCompletions = completionsData?.data.completions || [];
   const batches = batchesData?.data || [];
   const students = studentsData?.data?.students || [];
+
+  // Filter completions based on search query
+  const completions = allCompletions.filter((completion) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      completion.student?.name?.toLowerCase().includes(query) ||
+      completion.student?.email?.toLowerCase().includes(query) ||
+      completion.softwareName?.toLowerCase().includes(query) ||
+      completion.batch?.title?.toLowerCase().includes(query) ||
+      completion.status?.toLowerCase().includes(query) ||
+      completion.faculty?.name?.toLowerCase().includes(query)
+    );
+  });
 
   const getStatusBadge = (status: SoftwareCompletionStatus) => {
     const colors = {
@@ -105,7 +121,56 @@ export const SoftwareCompletionManagement: React.FC = () => {
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                {/* Search Bar */}
+                <div className="mb-4">
+                  <div className="relative max-w-md">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search completions by student, software, batch, faculty, or status..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {searchQuery && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Showing {completions.length} of {allCompletions.length} completions
+                    </p>
+                  )}
+                </div>
+
+                {completions.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">
+                      {searchQuery ? 'No completions found matching your search' : 'No software completion records found'}
+                    </p>
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="mt-2 text-orange-600 hover:text-orange-700 text-sm"
+                      >
+                        Clear search
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -154,10 +219,10 @@ export const SoftwareCompletionManagement: React.FC = () => {
                           {completion.faculty?.name}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {new Date(completion.startDate).toLocaleDateString()}
+                          {formatDateDDMMYYYY(completion.startDate)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {new Date(completion.endDate).toLocaleDateString()}
+                          {formatDateDDMMYYYY(completion.endDate)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(completion.status)}</td>
                         {(user?.role === 'faculty' || user?.role === 'admin' || user?.role === 'superadmin') && (
@@ -174,10 +239,9 @@ export const SoftwareCompletionManagement: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
-                {completions.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">No software completion records found</div>
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>

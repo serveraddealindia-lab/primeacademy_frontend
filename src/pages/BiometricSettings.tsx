@@ -349,7 +349,7 @@ export const BiometricSettings: React.FC = () => {
         {/* Create Device Modal */}
         {isCreateModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-4">Register New Device</h2>
               <div className="space-y-4">
                 <div>
@@ -458,7 +458,7 @@ export const BiometricSettings: React.FC = () => {
         {/* Edit Device Modal */}
         {isEditModalOpen && selectedDevice && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-4">Edit Device</h2>
               <div className="space-y-4">
                 <div>
@@ -556,7 +556,7 @@ export const BiometricSettings: React.FC = () => {
         {/* Delete Device Modal */}
         {isDeleteModalOpen && selectedDevice && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
               <h2 className="text-2xl font-bold mb-4">Delete Device</h2>
               <p className="text-gray-700 mb-4">
                 Are you sure you want to delete <strong>{selectedDevice.deviceName}</strong>? This action cannot be

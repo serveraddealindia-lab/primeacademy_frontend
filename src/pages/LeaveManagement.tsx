@@ -7,6 +7,7 @@ import { employeeLeaveAPI, CreateEmployeeLeaveRequest } from '../api/employeeLea
 import { facultyLeaveAPI, CreateFacultyLeaveRequest } from '../api/facultyLeave.api';
 import { batchAPI } from '../api/batch.api';
 import { userAPI } from '../api/user.api';
+import { formatDateDDMMYYYY } from '../utils/dateUtils';
 
 type LeaveType = 'student' | 'employee' | 'faculty';
 
@@ -24,6 +25,7 @@ export const LeaveManagement: React.FC = () => {
   const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
   const [selectedLeave, setSelectedLeave] = useState<any>(null);
   const [statusFilter, setStatusFilter] = useState<LeaveStatus | 'all'>('all');
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
 
   // Fetch student leaves
   const { data: studentLeavesData, isLoading: isLoadingStudent } = useQuery({
@@ -239,12 +241,12 @@ export const LeaveManagement: React.FC = () => {
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto p-4 md:p-6">
         <div className="bg-white shadow-xl rounded-lg overflow-hidden">
-          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-8 py-6">
-            <div className="flex justify-between items-center">
+          <div className="bg-gradient-to-r from-orange-600 to-orange-500 px-4 md:px-8 py-4 md:py-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-white">Leave Management</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">Leave Management</h1>
                 <p className="mt-2 text-orange-100">Manage leave requests for all users</p>
               </div>
               {canCreateLeave() && (
@@ -396,10 +398,10 @@ export const LeaveManagement: React.FC = () => {
                           </td>
                         )}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {new Date(leave.startDate).toLocaleDateString()}
+                          {formatDateDDMMYYYY(leave.startDate)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {new Date(leave.endDate).toLocaleDateString()}
+                          {formatDateDDMMYYYY(leave.endDate)}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {leave.reason || '-'}
@@ -432,7 +434,7 @@ export const LeaveManagement: React.FC = () => {
                         {canApproveLeave() && leave.status !== LeaveStatus.PENDING && (
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {leave.approver?.name && `By ${leave.approver.name}`}
-                            {leave.approvedAt && ` on ${new Date(leave.approvedAt).toLocaleDateString()}`}
+                            {leave.approvedAt && ` on ${formatDateDDMMYYYY(leave.approvedAt)}`}
                           </td>
                         )}
                       </tr>
@@ -447,8 +449,8 @@ export const LeaveManagement: React.FC = () => {
 
       {/* Create Leave Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">Request Leave</h2>
               <button
@@ -466,6 +468,20 @@ export const LeaveManagement: React.FC = () => {
                   {(currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && (
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Student *</label>
+                      <div className="relative mb-2">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Search students by name or email..."
+                          value={studentSearchQuery}
+                          onChange={(e) => setStudentSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </div>
                       <select
                         name="studentId"
                         required
@@ -473,12 +489,31 @@ export const LeaveManagement: React.FC = () => {
                         disabled={!studentsData?.data?.users}
                       >
                         <option value="">{studentsData?.data?.users ? 'Select Student' : 'Loading...'}</option>
-                        {studentsData?.data?.users?.map((student: any) => (
-                          <option key={student.id} value={student.id}>
-                            {student.name} ({student.email})
-                          </option>
-                        ))}
+                        {studentsData?.data?.users
+                          ?.filter((student: any) => {
+                            if (!studentSearchQuery.trim()) return true;
+                            const query = studentSearchQuery.toLowerCase();
+                            return (
+                              student.name?.toLowerCase().includes(query) ||
+                              student.email?.toLowerCase().includes(query)
+                            );
+                          })
+                          ?.map((student: any) => (
+                            <option key={student.id} value={student.id}>
+                              {student.name} ({student.email})
+                            </option>
+                          ))}
                       </select>
+                      {studentsData?.data?.users?.filter((student: any) => {
+                        if (!studentSearchQuery.trim()) return false;
+                        const query = studentSearchQuery.toLowerCase();
+                        return (
+                          student.name?.toLowerCase().includes(query) ||
+                          student.email?.toLowerCase().includes(query)
+                        );
+                      }).length === 0 && studentSearchQuery.trim() && (
+                        <p className="mt-1 text-xs text-gray-500">No students found matching your search</p>
+                      )}
                     </div>
                   )}
                   <div className="mb-4">
@@ -587,8 +622,8 @@ export const LeaveManagement: React.FC = () => {
 
       {/* Approve/Reject Modal */}
       {isApproveModalOpen && selectedLeave && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">
                 {selectedLeave.status === LeaveStatus.PENDING ? 'Approve/Reject Leave' : 'Leave Details'}

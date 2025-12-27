@@ -3,6 +3,7 @@ import api from './axios';
 export interface StudentProfile {
   id: number;
   userId: number;
+  serialNo?: string;
   dob?: string;
   address?: string;
   documents?: Record<string, any>;
@@ -10,6 +11,9 @@ export interface StudentProfile {
   softwareList?: string[];
   enrollmentDate?: string;
   status?: string;
+  finishedBatches?: string[];
+  currentBatches?: string[];
+  pendingBatches?: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -27,6 +31,19 @@ export interface User {
   studentProfile?: StudentProfile;
   facultyProfile?: any;
   employeeProfile?: any;
+  enrollments?: Array<{
+    id: number;
+    status: string;
+    enrollmentDate?: string;
+    batch?: {
+      id: number;
+      title: string;
+      software?: string | null;
+      mode?: string | null;
+      status?: string | null;
+      schedule?: Record<string, unknown> | null;
+    } | null;
+  }>;
 }
 
 export interface CreateUserRequest {
@@ -84,6 +101,16 @@ export interface LoginAsUserResponse {
   };
 }
 
+export interface ResetPasswordResponse {
+  status: string;
+  message: string;
+  data: {
+    newPassword: string;
+    userId: number;
+    email: string;
+  };
+}
+
 export const userAPI = {
   getAllUsers: async (params?: { role?: string; isActive?: boolean }): Promise<UsersResponse> => {
     const response = await api.get<UsersResponse>('/users', { params });
@@ -110,6 +137,10 @@ export const userAPI = {
   },
   updateStudentProfile: async (userId: number, data: UpdateStudentProfileRequest): Promise<UserResponse> => {
     const response = await api.put<UserResponse>(`/users/${userId}/student-profile`, data);
+    return response.data;
+  },
+  resetPassword: async (userId: number, newPassword?: string): Promise<ResetPasswordResponse> => {
+    const response = await api.post<ResetPasswordResponse>(`/users/${userId}/reset-password`, { newPassword });
     return response.data;
   },
 };
