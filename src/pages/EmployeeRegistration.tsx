@@ -7,7 +7,6 @@ import { employeeAPI, CreateEmployeeProfileRequest } from '../api/employee.api';
 import { uploadAPI } from '../api/upload.api';
 import { getImageUrl } from '../utils/imageUtils';
 import {
-  validateEmail,
   validatePhone,
   validateRequired,
   validatePAN,
@@ -16,7 +15,6 @@ import {
   validatePostalCode,
   validateDate,
   validateEmployeeId,
-  validatePassword,
 } from '../utils/validation';
 
 interface RegisterUserRequest {
@@ -53,6 +51,10 @@ interface EmployeeFormData {
   emergencyPhoneNumber: string;
   emergencyAlternatePhone: string;
   documents: string[];
+  fullName?: string;
+  email?: string;
+  contactNumber?: string;
+  password?: string;
 }
 
 export const EmployeeRegistration: React.FC = () => {
@@ -100,6 +102,10 @@ export const EmployeeRegistration: React.FC = () => {
     emergencyPhoneNumber: '',
     emergencyAlternatePhone: '',
     documents: [],
+    fullName: '',
+    email: '',
+    contactNumber: '',
+    password: '',
   });
 
   // Register user first
@@ -113,9 +119,37 @@ export const EmployeeRegistration: React.FC = () => {
       setCurrentStep(2); // Move to next step after user creation
     },
     onError: (error: any) => {
-      alert(error.response?.data?.message || 'Failed to create user account');
+      // Check if the error is due to duplicate email
+      if (error.response?.data?.message?.includes('already exists') || 
+          error.response?.data?.message?.includes('duplicate')) {
+        // If email exists, try to find the existing user
+        handleExistingUser();
+      } else {
+        alert(error.response?.data?.message || 'Failed to create user account');
+      }
     },
   });
+  
+  // Function to handle existing users
+  const handleExistingUser = async () => {
+    const email = formData.email || '';
+    
+    try {
+      const userResponse = await api.get(`/users?email=${encodeURIComponent(email)}`);
+      if (userResponse.data && userResponse.data.length > 0) {
+        const existingUser = userResponse.data[0];
+        
+        // Set the createdUserId to the existing user's ID
+        setCreatedUserId(existingUser.id);
+        
+        // Move to next step
+        setCurrentStep(2);
+      }
+    } catch (error) {
+      console.error('Error getting existing user:', error);
+      alert('User with this email already exists, but could not retrieve user details. Please contact support.');
+    }
+  };
 
   // Create employee profile
   const createEmployeeProfileMutation = useMutation({
@@ -131,46 +165,7 @@ export const EmployeeRegistration: React.FC = () => {
     },
   });
 
-  const handleUserRegistration = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formDataObj = new FormData(e.currentTarget);
-    
-    const name = (formDataObj.get('fullName') as string) || '';
-    const email = (formDataObj.get('email') as string) || '';
-    const phone = (formDataObj.get('contactNumber') as string) || '';
-    const password = (formDataObj.get('password') as string) || '';
-    
-    // Validate all fields
-    const newErrors: Record<string, string> = {};
-    
-    const nameError = validateRequired(name, 'Full Name');
-    if (nameError) newErrors.fullName = nameError;
-    
-    const emailError = validateEmail(email);
-    if (emailError) newErrors.email = emailError;
-    
-    const phoneError = validatePhone(phone);
-    if (phoneError) newErrors.contactNumber = phoneError;
-    
-    const passwordError = validatePassword(password);
-    if (passwordError) newErrors.password = passwordError;
-    
-    setErrors(newErrors);
-    
-    if (Object.keys(newErrors).length > 0) {
-      return;
-    }
-    
-    const userData: RegisterUserRequest = {
-      name,
-      email,
-      phone,
-      password,
-      role: 'employee',
-    };
 
-    registerUserMutation.mutate(userData);
-  };
 
   // Handle input changes and update state
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -210,8 +205,15 @@ export const EmployeeRegistration: React.FC = () => {
     setFormData(prev => {
       const updated = { ...prev };
       
+      // Step 1: User Account Information
+      if (step === 1) {
+        updated.fullName = (formDataObj.get('fullName') as string) || prev.fullName;
+        updated.email = (formDataObj.get('email') as string) || prev.email;
+        updated.contactNumber = (formDataObj.get('contactNumber') as string) || prev.contactNumber;
+        updated.password = (formDataObj.get('password') as string) || prev.password;
+      }
       // Step 2: Personal Information
-      if (step === 2) {
+      else if (step === 2) {
         updated.employeeId = (formDataObj.get('employeeId') as string) || prev.employeeId;
         updated.gender = (formDataObj.get('gender') as string) || prev.gender;
         updated.dateOfBirth = (formDataObj.get('dateOfBirth') as string) || prev.dateOfBirth;
@@ -256,85 +258,7 @@ export const EmployeeRegistration: React.FC = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    
-    if (!createdUserId) {
-      alert('Please complete user registration first');
-      return;
-    }
 
-    // Validate all steps before final submission
-    if (!validateCurrentStep(5)) {
-      alert('Please fill in all required fields correctly. Going back to incomplete step.');
-      // Find the first step with errors
-      if (errors.employeeId || errors.gender || errors.dateOfBirth || errors.nationality || 
-          errors.maritalStatus || errors.address || errors.city || errors.state || errors.postalCode) {
-        setCurrentStep(2);
-      } else if (errors.department || errors.designation || errors.dateOfJoining || 
-                 errors.employmentType || errors.reportingManager || errors.workLocation) {
-        setCurrentStep(3);
-      } else if (errors.bankName || errors.accountNumber || errors.ifscCode || 
-                 errors.branch || errors.panNumber) {
-        setCurrentStep(4);
-      } else if (errors.emergencyContactName || errors.emergencyRelationship || 
-                 errors.emergencyPhoneNumber || errors.emergencyAlternatePhone) {
-        setCurrentStep(5);
-      }
-      return;
-    }
-    
-    // Store documents in structured format
-    const documents: any = {};
-    if (photo) documents.photo = photo;
-    if (panCard) documents.panCard = panCard;
-    if (aadharCard) documents.aadharCard = aadharCard;
-    if (otherDocuments.length > 0) documents.otherDocuments = otherDocuments;
-    
-    const data: CreateEmployeeProfileRequest & { 
-      address?: string;
-      emergencyContactName?: string;
-      emergencyRelationship?: string;
-      emergencyPhoneNumber?: string;
-      emergencyAlternatePhone?: string;
-      documentsSubmitted?: string;
-      metadata?: any;
-    } = {
-      userId: createdUserId,
-      employeeId: formData.employeeId.trim(),
-      gender: formData.gender || undefined,
-      dateOfBirth: formData.dateOfBirth || undefined,
-      nationality: formData.nationality || undefined,
-      maritalStatus: formData.maritalStatus || undefined,
-      department: formData.department || undefined,
-      designation: formData.designation || undefined,
-      dateOfJoining: formData.dateOfJoining || undefined,
-      employmentType: formData.employmentType || undefined,
-      reportingManager: formData.reportingManager || undefined,
-      workLocation: formData.workLocation || undefined,
-      bankName: formData.bankName || undefined,
-      accountNumber: formData.accountNumber || undefined,
-      ifscCode: formData.ifscCode || undefined,
-      branch: formData.branch || undefined,
-      panNumber: formData.panNumber || undefined,
-      city: formData.city || undefined,
-      state: formData.state || undefined,
-      postalCode: formData.postalCode || undefined,
-      address: formData.address || undefined,
-      emergencyContactName: formData.emergencyContactName || undefined,
-      emergencyRelationship: formData.emergencyRelationship || undefined,
-      emergencyPhoneNumber: formData.emergencyPhoneNumber || undefined,
-      emergencyAlternatePhone: formData.emergencyAlternatePhone || undefined,
-      documentsSubmitted: formData.documents.length > 0 ? formData.documents.join(', ') : undefined,
-    };
-
-    // Add documents to metadata if any exist
-    if (Object.keys(documents).length > 0) {
-      data.metadata = { documents };
-    }
-
-    createEmployeeProfileMutation.mutate(data);
-  };
 
   const validateCurrentStep = (step: number): boolean => {
     const newErrors: Record<string, string> = {};
@@ -433,8 +357,19 @@ export const EmployeeRegistration: React.FC = () => {
 
   const nextStep = () => {
     if (currentStep < totalSteps) {
-      // Validate current step before moving forward
-      if (!validateCurrentStep(currentStep)) {
+      // Special handling for Step 1
+      if (currentStep === 1 && !createdUserId) {
+        // Instead of registering here, we'll submit the form to trigger duplicate checks and registration
+        // Find the form and submit it
+        const form = document.querySelector('form') as HTMLFormElement;
+        if (form) {
+          form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+        }
+        return;
+      }
+      
+      // Validate current step before moving forward (for steps 2-6)
+      if (currentStep > 1 && !validateCurrentStep(currentStep)) {
         alert('Please fill in all required fields correctly before proceeding.');
         return;
       }
@@ -451,6 +386,311 @@ export const EmployeeRegistration: React.FC = () => {
       // Save current step data before moving backward
       saveCurrentStepData(currentStep);
       setCurrentStep(currentStep - 1);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    // Only allow submission on the last step
+    if (currentStep !== totalSteps) {
+      // If not on last step, validate only current step's fields and move to next step
+      const currentFormData = new FormData(e.currentTarget);
+      
+      // Special validation for Step 1 (when moving from Step 1 to Step 2)
+      // Only validate if we don't already have a createdUserId (meaning no user has been created yet)
+      if (currentStep === 1 && !createdUserId) {
+        try {
+          // Use the values from formData state instead of form directly
+          const email = formData.email || '';
+          const phone = formData.contactNumber || '';
+          
+          // Check if email already exists
+          const emailResponse = await api.get(`/users?email=${encodeURIComponent(email)}`);
+          if (emailResponse.data && Array.isArray(emailResponse.data) && emailResponse.data.length > 0) {
+            alert('A user with this email already exists. Please use a different email address.');
+            return;
+          }
+          
+          // Check if phone already exists
+          const phoneResponse = await api.get(`/users?phone=${encodeURIComponent(phone)}`);
+          if (phoneResponse.data && Array.isArray(phoneResponse.data) && phoneResponse.data.length > 0) {
+            alert('A user with this phone number already exists. Please use a different phone number.');
+            return;
+          }
+          
+          // If validation passes, trigger user registration
+          const userData: RegisterUserRequest = {
+            name: formData.fullName || '',
+            email: formData.email || '',
+            phone: formData.contactNumber || '',
+            password: formData.password || '',
+            role: 'employee',
+          };
+          
+          registerUserMutation.mutate(userData);
+          return; // Don't continue with other validation
+        } catch (error) {
+          console.error('Error checking existing users:', error);
+          alert('Error checking existing users. Please try again.');
+          return;
+        }
+      } else if (currentStep === 1 && createdUserId) {
+        // If user is already created and on Step 1, just move to Step 2
+        setCurrentStep(2);
+        return;
+      }
+      
+      // Validate only current step's required fields
+      let hasErrors = false;
+      const stepErrors: Record<string, string> = {};
+      
+      if (currentStep === 2) {
+        // Validate Step 2 fields
+        const employeeId = currentFormData.get('employeeId') as string;
+        const gender = currentFormData.get('gender') as string;
+        const dateOfBirth = currentFormData.get('dateOfBirth') as string;
+        const nationality = currentFormData.get('nationality') as string;
+        const maritalStatus = currentFormData.get('maritalStatus') as string;
+        const address = currentFormData.get('address') as string;
+        const city = currentFormData.get('city') as string;
+        const state = currentFormData.get('state') as string;
+        const postalCode = currentFormData.get('postalCode') as string;
+        
+        const employeeIdError = validateEmployeeId(employeeId);
+        if (employeeIdError) stepErrors.employeeId = employeeIdError;
+        
+        const genderError = validateRequired(gender, 'Gender');
+        if (genderError) stepErrors.gender = genderError;
+        
+        const dobError = validateDate(dateOfBirth, 'Date of Birth');
+        if (dobError) stepErrors.dateOfBirth = dobError;
+        
+        const nationalityError = validateRequired(nationality, 'Nationality');
+        if (nationalityError) stepErrors.nationality = nationalityError;
+        
+        const maritalStatusError = validateRequired(maritalStatus, 'Marital Status');
+        if (maritalStatusError) stepErrors.maritalStatus = maritalStatusError;
+        
+        const addressError = validateRequired(address, 'Address');
+        if (addressError) stepErrors.address = addressError;
+        
+        const cityError = validateRequired(city, 'City');
+        if (cityError) stepErrors.city = cityError;
+        
+        const stateError = validateRequired(state, 'State');
+        if (stateError) stepErrors.state = stateError;
+        
+        const postalCodeError = validatePostalCode(postalCode);
+        if (postalCodeError) stepErrors.postalCode = postalCodeError;
+        
+        hasErrors = Object.keys(stepErrors).length > 0;
+      } else if (currentStep === 3) {
+        // Validate Step 3 fields
+        const department = currentFormData.get('department') as string;
+        const designation = currentFormData.get('designation') as string;
+        const dateOfJoining = currentFormData.get('dateOfJoining') as string;
+        const employmentType = currentFormData.get('employmentType') as string;
+        const reportingManager = currentFormData.get('reportingManager') as string;
+        const workLocation = currentFormData.get('workLocation') as string;
+        
+        const departmentError = validateRequired(department, 'Department');
+        if (departmentError) stepErrors.department = departmentError;
+        
+        const designationError = validateRequired(designation, 'Designation');
+        if (designationError) stepErrors.designation = designationError;
+        
+        const dojError = validateDate(dateOfJoining, 'Date of Joining');
+        if (dojError) stepErrors.dateOfJoining = dojError;
+        
+        const employmentTypeError = validateRequired(employmentType, 'Employment Type');
+        if (employmentTypeError) stepErrors.employmentType = employmentTypeError;
+        
+        const reportingManagerError = validateRequired(reportingManager, 'Reporting Manager');
+        if (reportingManagerError) stepErrors.reportingManager = reportingManagerError;
+        
+        const workLocationError = validateRequired(workLocation, 'Work Location');
+        if (workLocationError) stepErrors.workLocation = workLocationError;
+        
+        hasErrors = Object.keys(stepErrors).length > 0;
+      } else if (currentStep === 4) {
+        // Validate Step 4 fields
+        const bankName = currentFormData.get('bankName') as string;
+        const accountNumber = currentFormData.get('accountNumber') as string;
+        const ifscCode = currentFormData.get('ifscCode') as string;
+        const branch = currentFormData.get('branch') as string;
+        const panNumber = currentFormData.get('panNumber') as string;
+        
+        const bankNameError = validateRequired(bankName, 'Bank Name');
+        if (bankNameError) stepErrors.bankName = bankNameError;
+        
+        const accountNumberError = validateAccountNumber(accountNumber);
+        if (accountNumberError) stepErrors.accountNumber = accountNumberError;
+        
+        const ifscError = validateIFSC(ifscCode);
+        if (ifscError) stepErrors.ifscCode = ifscError;
+        
+        const branchError = validateRequired(branch, 'Branch');
+        if (branchError) stepErrors.branch = branchError;
+        
+        const panError = validatePAN(panNumber);
+        if (panError) stepErrors.panNumber = panError;
+        
+        hasErrors = Object.keys(stepErrors).length > 0;
+      } else if (currentStep === 5) {
+        // Validate Step 5 fields
+        const emergencyContactName = currentFormData.get('emergencyContactName') as string;
+        const emergencyRelationship = currentFormData.get('emergencyRelationship') as string;
+        const emergencyPhoneNumber = currentFormData.get('emergencyPhoneNumber') as string;
+        const emergencyAlternatePhone = currentFormData.get('emergencyAlternatePhone') as string;
+        
+        const contactNameError = validateRequired(emergencyContactName, 'Emergency Contact Name');
+        if (contactNameError) stepErrors.emergencyContactName = contactNameError;
+        
+        const relationshipError = validateRequired(emergencyRelationship, 'Relationship');
+        if (relationshipError) stepErrors.emergencyRelationship = relationshipError;
+        
+        // Phone Number validation
+        const phoneNumberTrimmed = emergencyPhoneNumber.trim();
+        if (!phoneNumberTrimmed) {
+          stepErrors.emergencyPhoneNumber = 'Phone number is required';
+        } else if (phoneNumberTrimmed.length !== 10) {
+          stepErrors.emergencyPhoneNumber = 'Phone number must be exactly 10 digits';
+        } else {
+          const phoneError = validatePhone(phoneNumberTrimmed);
+          if (phoneError) stepErrors.emergencyPhoneNumber = phoneError;
+        }
+        
+        // Alternate Phone Number validation
+        const altPhoneTrimmed = emergencyAlternatePhone.trim();
+        if (!altPhoneTrimmed) {
+          stepErrors.emergencyAlternatePhone = 'Alternate phone number is required';
+        } else if (altPhoneTrimmed.length !== 10) {
+          stepErrors.emergencyAlternatePhone = 'Phone number must be exactly 10 digits';
+        } else {
+          const altPhoneError = validatePhone(altPhoneTrimmed);
+          if (altPhoneError) stepErrors.emergencyAlternatePhone = altPhoneError;
+        }
+        
+        hasErrors = Object.keys(stepErrors).length > 0;
+      }
+      
+      if (hasErrors) {
+        setErrors(stepErrors);
+        // Find the first step with errors and navigate to it
+        if (currentStep === 2 && (stepErrors.employeeId || stepErrors.gender || stepErrors.dateOfBirth || 
+            stepErrors.nationality || stepErrors.maritalStatus || stepErrors.address || 
+            stepErrors.city || stepErrors.state || stepErrors.postalCode)) {
+          setCurrentStep(2);
+        } else if (currentStep === 3 && (stepErrors.department || stepErrors.designation || 
+                   stepErrors.dateOfJoining || stepErrors.employmentType || 
+                   stepErrors.reportingManager || stepErrors.workLocation)) {
+          setCurrentStep(3);
+        } else if (currentStep === 4 && (stepErrors.bankName || stepErrors.accountNumber || 
+                   stepErrors.ifscCode || stepErrors.branch || stepErrors.panNumber)) {
+          setCurrentStep(4);
+        } else if (currentStep === 5 && (stepErrors.emergencyContactName || stepErrors.emergencyRelationship || 
+                   stepErrors.emergencyPhoneNumber || stepErrors.emergencyAlternatePhone)) {
+          setCurrentStep(5);
+        }
+        alert('Please fill in all required fields correctly before proceeding.');
+        return;
+      }
+      
+      // Save current step data before moving forward
+      saveCurrentStepData(currentStep);
+      setErrors({}); // Clear errors when moving to next step
+      setCurrentStep(currentStep + 1);
+    } else {
+      // This is the final step, submit the complete form
+      if (!createdUserId) {
+        alert('Please complete user registration first');
+        return;
+      }
+
+      // Validate Step 5 (Emergency Contact) data before final submission
+      const step5Errors: Record<string, string> = {};
+      
+      // Validate Step 5 fields using formData
+      const contactNameError = validateRequired(formData.emergencyContactName || '', 'Emergency Contact Name');
+      if (contactNameError) step5Errors.emergencyContactName = contactNameError;
+      
+      const relationshipError = validateRequired(formData.emergencyRelationship || '', 'Relationship');
+      if (relationshipError) step5Errors.emergencyRelationship = relationshipError;
+      
+      // Phone Number validation
+      if (!formData.emergencyPhoneNumber || formData.emergencyPhoneNumber.trim() === '') {
+        step5Errors.emergencyPhoneNumber = 'Phone number is required';
+      } else {
+        const phoneError = validatePhone(formData.emergencyPhoneNumber);
+        if (phoneError) step5Errors.emergencyPhoneNumber = phoneError;
+      }
+      
+      // Alternate Phone Number validation
+      if (!formData.emergencyAlternatePhone || formData.emergencyAlternatePhone.trim() === '') {
+        step5Errors.emergencyAlternatePhone = 'Alternate phone number is required';
+      } else {
+        const altPhoneError = validatePhone(formData.emergencyAlternatePhone);
+        if (altPhoneError) step5Errors.emergencyAlternatePhone = altPhoneError;
+      }
+      
+      if (Object.keys(step5Errors).length > 0) {
+        setErrors(step5Errors);
+        alert('Please fill in all required fields correctly. Going back to incomplete step.');
+        setCurrentStep(5); // Go back to Step 5 to fix errors
+        return;
+      }
+      
+      // Store documents in structured format
+      const documents: any = {};
+      if (photo) documents.photo = photo;
+      if (panCard) documents.panCard = panCard;
+      if (aadharCard) documents.aadharCard = aadharCard;
+      if (otherDocuments.length > 0) documents.otherDocuments = otherDocuments;
+      
+      const data: CreateEmployeeProfileRequest & { 
+        address?: string;
+        emergencyContactName?: string;
+        emergencyRelationship?: string;
+        emergencyPhoneNumber?: string;
+        emergencyAlternatePhone?: string;
+        documentsSubmitted?: string;
+        metadata?: any;
+      } = {
+        userId: createdUserId,
+        employeeId: formData.employeeId.trim(),
+        gender: formData.gender || undefined,
+        dateOfBirth: formData.dateOfBirth || undefined,
+        nationality: formData.nationality || undefined,
+        maritalStatus: formData.maritalStatus || undefined,
+        department: formData.department || undefined,
+        designation: formData.designation || undefined,
+        dateOfJoining: formData.dateOfJoining || undefined,
+        employmentType: formData.employmentType || undefined,
+        reportingManager: formData.reportingManager || undefined,
+        workLocation: formData.workLocation || undefined,
+        bankName: formData.bankName || undefined,
+        accountNumber: formData.accountNumber || undefined,
+        ifscCode: formData.ifscCode || undefined,
+        branch: formData.branch || undefined,
+        panNumber: formData.panNumber || undefined,
+        city: formData.city || undefined,
+        state: formData.state || undefined,
+        postalCode: formData.postalCode || undefined,
+        address: formData.address || undefined,
+        emergencyContactName: formData.emergencyContactName || undefined,
+        emergencyRelationship: formData.emergencyRelationship || undefined,
+        emergencyPhoneNumber: formData.emergencyPhoneNumber || undefined,
+        emergencyAlternatePhone: formData.emergencyAlternatePhone || undefined,
+        documentsSubmitted: formData.documents.length > 0 ? formData.documents.join(', ') : undefined,
+      };
+
+      // Add documents to metadata if any exist
+      if (Object.keys(documents).length > 0) {
+        data.metadata = { documents };
+      }
+
+      createEmployeeProfileMutation.mutate(data);
     }
   };
 
@@ -661,7 +901,7 @@ export const EmployeeRegistration: React.FC = () => {
 
           {/* Step 1: User Account Creation */}
           {currentStep === 1 && (
-            <form onSubmit={handleUserRegistration} className="p-8 max-h-[calc(100vh-12rem)] overflow-y-auto">
+            <form onSubmit={handleSubmit} className="p-8 max-h-[calc(100vh-12rem)] overflow-y-auto">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Step 1: Create User Account</h2>
               
               <div className="space-y-6">
@@ -672,6 +912,20 @@ export const EmployeeRegistration: React.FC = () => {
                   <input
                     type="text"
                     name="fullName"
+                    value={formData.fullName || ''}
+                    onChange={(e) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        fullName: e.target.value
+                      }));
+                      if (errors.fullName) {
+                        setErrors(prev => {
+                          const newErrors = { ...prev };
+                          delete newErrors.fullName;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     required
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                       errors.fullName ? 'border-red-500' : 'border-gray-300'
@@ -689,6 +943,20 @@ export const EmployeeRegistration: React.FC = () => {
                   <input
                     type="email"
                     name="email"
+                    value={formData.email || ''}
+                    onChange={(e) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        email: e.target.value
+                      }));
+                      if (errors.email) {
+                        setErrors(prev => {
+                          const newErrors = { ...prev };
+                          delete newErrors.email;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     required
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                       errors.email ? 'border-red-500' : 'border-gray-300'
@@ -706,6 +974,20 @@ export const EmployeeRegistration: React.FC = () => {
                   <input
                     type="tel"
                     name="contactNumber"
+                    value={formData.contactNumber || ''}
+                    onChange={(e) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        contactNumber: e.target.value
+                      }));
+                      if (errors.contactNumber) {
+                        setErrors(prev => {
+                          const newErrors = { ...prev };
+                          delete newErrors.contactNumber;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     required
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                       errors.contactNumber ? 'border-red-500' : 'border-gray-300'
@@ -723,6 +1005,20 @@ export const EmployeeRegistration: React.FC = () => {
                   <input
                     type="password"
                     name="password"
+                    value={formData.password || ''}
+                    onChange={(e) => {
+                      setFormData(prev => ({
+                        ...prev,
+                        password: e.target.value
+                      }));
+                      if (errors.password) {
+                        setErrors(prev => {
+                          const newErrors = { ...prev };
+                          delete newErrors.password;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     required
                     minLength={6}
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 ${
@@ -1941,7 +2237,7 @@ export const EmployeeRegistration: React.FC = () => {
                   <button
                     type="button"
                     onClick={prevStep}
-                    disabled={currentStep === 2}
+                    disabled={currentStep === 1}
                     className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Previous
@@ -1956,21 +2252,7 @@ export const EmployeeRegistration: React.FC = () => {
                     </button>
                   ) : (
                     <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        // Explicitly call handleSubmit
-                        const form = e.currentTarget.closest('form');
-                        if (form) {
-                          const syntheticEvent = {
-                            preventDefault: () => {},
-                            currentTarget: form,
-                            target: form,
-                          } as unknown as React.FormEvent<HTMLFormElement>;
-                          handleSubmit(syntheticEvent);
-                        }
-                      }}
+                      type="submit"
                       disabled={createEmployeeProfileMutation.isPending}
                       className="px-6 py-2 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50"
                     >

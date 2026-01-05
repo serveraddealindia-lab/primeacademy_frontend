@@ -18,6 +18,174 @@ export const BatchDetails: React.FC = () => {
     enabled: !!id,
   });
 
+  // Software to session count mapping
+  const softwareSessionMap: Record<string, number> = {
+    'Photoshop': 23,
+    'Illustrator': 16,
+    'InDesign': 16,
+    'After Effects': 16,
+    'Premiere Pro': 14,
+    'Figma': 12,
+    'XD': 6,
+    'Animate CC': 32,
+    'Premiere Audition': 14,
+    'HTML Java DW CSS': 24,
+    'Ar. MAX + Vray': 48,
+    'MAX': 89,
+    'Fusion': 10,
+    'Real Flow': 10,
+    'Fume FX': 8,
+    'Nuke': 24,
+    'Thinking Particle': 10,
+    'Ray Fire': 6,
+    'Mocha': 6,
+    'Silhouette': 6,
+    'PF Track': 6,
+    'Vue': 13,
+    'Houdni': 12,
+    'FCP': 11,
+    'Maya': 92,
+    'CAD UNITY': 12,
+    'Mudbox': 7,
+    'Unity Game Design': 24,
+    'Z-Brush': 12,
+    'Lumion': 6,
+    'SketchUp': 12,
+    'Unreal': 33,
+    'Blender Pro': 72,
+    'Cinema 4D': 72,
+    'Substance Painter': 6,
+    '3D Equalizer': 6,
+    'Photography': 10,
+    'Auto-Cad': 15,
+    'Davinci': 10,
+    'Corel': 14,
+    'CorelDRAW': 14,
+  };
+  
+  // Calculate total number of lectures based on software
+  const calculateTotalLectures = (softwareString: string): number => {
+    if (!softwareString) return 0;
+    
+    // Split software string by comma and calculate total sessions
+    const softwareList = softwareString.split(',').map(s => s.trim()).filter(s => s);
+    
+    let totalLectures = 0;
+    softwareList.forEach(sw => {
+      const cleanSoftware = sw.trim();
+      // Check for exact matches first
+      if (softwareSessionMap[cleanSoftware]) {
+        totalLectures += softwareSessionMap[cleanSoftware];
+      } else {
+        // Check for partial matches (case insensitive)
+        const foundSoftware = Object.keys(softwareSessionMap).find(key => 
+          key.toLowerCase().includes(cleanSoftware.toLowerCase()) || 
+          cleanSoftware.toLowerCase().includes(key.toLowerCase())
+        );
+        if (foundSoftware) {
+          totalLectures += softwareSessionMap[foundSoftware];
+        }
+      }
+    });
+    
+    return totalLectures;
+  };
+  
+  // Calculate expected end date based on schedule
+  const calculateExpectedEndDate = (startDate: string, softwareString: string, schedule?: Record<string, any>): string => {
+    if (!startDate || !softwareString) return '';
+    
+    const totalLectures = calculateTotalLectures(softwareString);
+    
+    if (totalLectures === 0) return startDate;
+    
+    // If schedule is provided, calculate based on days per week
+    if (schedule && Object.keys(schedule).length > 0) {
+      const daysPerWeek = Object.keys(schedule).length;
+      
+      if (daysPerWeek > 0) {
+        // Calculate end date by adding the actual number of days needed
+        // based on the scheduled days
+        const start = new Date(startDate);
+        // Set to start of day to avoid timezone issues
+        start.setHours(0, 0, 0, 0);
+        let currentDate = new Date(start);
+        let sessionsScheduled = 0;
+        
+        // We need to count actual calendar days based on the scheduled days
+        // First, make sure we start from a scheduled day
+        // If the start date is not a scheduled day, move to the next scheduled day
+        let startDayName = DAYS_OF_WEEK[currentDate.getDay()];
+        let isStartDayScheduled = false;
+        
+        // Check if start date is scheduled
+        const startDayMatches = [
+          startDayName, // Full day name (e.g., "Monday")
+          startDayName.substring(0, 3), // Abbreviated day (e.g., "Mon")
+          startDayName.toLowerCase(),
+          startDayName.substring(0, 3).toLowerCase(),
+          currentDate.getDay().toString(), // Numeric day (0-6 where 0 is Sunday)
+          (currentDate.getDay() === 0 ? 7 : currentDate.getDay()).toString() // Monday as 1, Sunday as 7
+        ];
+        isStartDayScheduled = startDayMatches.some(match => match in schedule);
+        
+        // If start date is not scheduled, find the next scheduled day
+        if (!isStartDayScheduled) {
+          while (!isStartDayScheduled) {
+            currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000); // Add one day
+            startDayName = DAYS_OF_WEEK[currentDate.getDay()];
+            
+            const nextDayMatches = [
+              startDayName, // Full day name (e.g., "Monday")
+              startDayName.substring(0, 3), // Abbreviated day (e.g., "Mon")
+              startDayName.toLowerCase(),
+              startDayName.substring(0, 3).toLowerCase(),
+              currentDate.getDay().toString(), // Numeric day (0-6 where 0 is Sunday)
+              (currentDate.getDay() === 0 ? 7 : currentDate.getDay()).toString() // Monday as 1, Sunday as 7
+            ];
+            isStartDayScheduled = nextDayMatches.some(match => match in schedule);
+          }
+        }
+        
+        // Now start counting from the first scheduled day
+        sessionsScheduled = 1; // Count the first scheduled day as the first session
+        
+        // Continue until we reach the required number of sessions
+        while (sessionsScheduled < totalLectures) {
+          // Move to next day
+          currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000); // Add one day in milliseconds
+          
+          // Check if this day is in the schedule
+          const dayName = DAYS_OF_WEEK[currentDate.getDay()];
+          // Check if this day is scheduled (comprehensive matching)
+          const dayMatches = [
+            dayName, // Full day name (e.g., "Monday")
+            dayName.substring(0, 3), // Abbreviated day (e.g., "Mon")
+            dayName.toLowerCase(),
+            dayName.substring(0, 3).toLowerCase(),
+            currentDate.getDay().toString(), // Numeric day (0-6 where 0 is Sunday)
+            (currentDate.getDay() === 0 ? 7 : currentDate.getDay()).toString() // Monday as 1, Sunday as 7
+          ];
+          
+          const isDayScheduled = dayMatches.some(match => match in schedule);
+          
+          if (isDayScheduled) {
+            sessionsScheduled++;
+          }
+        }
+        
+        return currentDate.toISOString().split('T')[0];
+      }
+    }
+    
+    // Fallback: assume 1 lecture per day
+    const start = new Date(startDate);
+    const end = new Date(start);
+    end.setDate(start.getDate() + totalLectures);
+    
+    return end.toISOString().split('T')[0];
+  };
+
   useEffect(() => {
     if (batchData?.data.batch) {
       setBatch(batchData.data.batch);
@@ -169,6 +337,14 @@ export const BatchDetails: React.FC = () => {
                   <div>
                     <p className="text-xs uppercase text-gray-500">Software</p>
                     <p className="font-medium">{batch.software || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-gray-500">Total Lectures</p>
+                    <p className="font-medium">{calculateTotalLectures(batch.software || '')} lectures</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-gray-500">Expected End Date</p>
+                    <p className="font-medium">{batch.startDate && batch.software ? formatDateDDMMYYYY(calculateExpectedEndDate(batch.startDate, batch.software || '', batch.schedule) || '') : 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase text-gray-500">Created At</p>

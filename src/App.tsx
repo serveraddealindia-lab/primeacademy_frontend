@@ -34,6 +34,7 @@ import { BiometricSettings } from './pages/BiometricSettings';
 import { PhotoManagement } from './pages/PhotoManagement';
 import { CourseModuleManagement } from './pages/CourseModuleManagement';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import Settings from './pages/Settings';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -319,6 +320,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <PhotoManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Settings />
           </ProtectedRoute>
         }
       />

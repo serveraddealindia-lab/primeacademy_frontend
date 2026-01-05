@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { batchAPI, UpdateBatchRequest, SuggestedCandidate } from '../api/batch.api';
+import StudentStatusSettings from '../components/StudentStatusSettings';
 import { studentAPI } from '../api/student.api';
 import { facultyAPI } from '../api/faculty.api';
 import { courseAPI } from '../api/course.api';
@@ -38,6 +39,174 @@ export const BatchEdit: React.FC = () => {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [batchStatus, setBatchStatus] = useState<string>('active');
   const [isLoadingBatch, setIsLoadingBatch] = useState(true);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [studentStatusSettings, setStudentStatusSettings] = useState({
+    includeActive: true,
+    includeActivePlus: false,
+    includeDropped: false,
+    includeDeactive: false,
+  });
+  
+  // Software to session count mapping
+  const softwareSessionMap: Record<string, number> = {
+    'Photoshop': 23,
+    'Illustrator': 16,
+    'InDesign': 16,
+    'After Effects': 16,
+    'Premiere Pro': 14,
+    'Figma': 12,
+    'XD': 6,
+    'Animate CC': 32,
+    'Premiere Audition': 14,
+    'HTML Java DW CSS': 24,
+    'Ar. MAX + Vray': 48,
+    'MAX': 89,
+    'Fusion': 10,
+    'Real Flow': 10,
+    'Fume FX': 8,
+    'Nuke': 24,
+    'Thinking Particle': 10,
+    'Ray Fire': 6,
+    'Mocha': 6,
+    'Silhouette': 6,
+    'PF Track': 6,
+    'Vue': 13,
+    'Houdni': 12,
+    'FCP': 11,
+    'Maya': 92,
+    'CAD UNITY': 12,
+    'Mudbox': 7,
+    'Unity Game Design': 24,
+    'Z-Brush': 12,
+    'Lumion': 6,
+    'SketchUp': 12,
+    'Unreal': 33,
+    'Blender Pro': 72,
+    'Cinema 4D': 72,
+    'Substance Painter': 6,
+    '3D Equalizer': 6,
+    'Photography': 10,
+    'Auto-Cad': 15,
+    'Davinci': 10,
+    'Corel': 14,
+    'CorelDRAW': 14,
+  };
+  
+  // Auto-calculate end date based on start date, software, and schedule
+  const calculateEndDate = (startDate: string, software: string[], schedule?: Record<string, DaySchedule>): string => {
+    if (!startDate || software.length === 0) return '';
+    
+    // Calculate total number of sessions based on software
+    let totalSessions = 0;
+    software.forEach(sw => {
+      const cleanSoftware = sw.trim();
+      // Check for exact matches first
+      if (softwareSessionMap[cleanSoftware]) {
+        totalSessions += softwareSessionMap[cleanSoftware];
+      } else {
+        // Check for partial matches (case insensitive)
+        const foundSoftware = Object.keys(softwareSessionMap).find(key => 
+          key.toLowerCase().includes(cleanSoftware.toLowerCase()) || 
+          cleanSoftware.toLowerCase().includes(key.toLowerCase())
+        );
+        if (foundSoftware) {
+          totalSessions += softwareSessionMap[foundSoftware];
+        }
+      }
+    });
+    
+    if (totalSessions === 0) return startDate; // If no mapping found, return start date
+    
+    // Calculate end date based on the schedule (number of sessions per week)
+    // If schedule is not provided or empty, default to 1 session per day
+    if (schedule && Object.keys(schedule).length > 0) {
+      // Count how many days per week have scheduled classes
+      const daysPerWeek = Object.keys(schedule).length;
+      
+      // If we have a schedule, calculate based on days per week
+      if (daysPerWeek > 0) {
+        // Calculate end date by adding the actual number of days needed
+        // based on the scheduled days
+        const start = new Date(startDate);
+        // Set to start of day to avoid timezone issues
+        start.setHours(0, 0, 0, 0);
+        let currentDate = new Date(start);
+        let sessionsScheduled = 0;
+        
+        // We need to count actual calendar days based on the scheduled days
+        // First, make sure we start from a scheduled day
+        // If the start date is not a scheduled day, move to the next scheduled day
+        let startDayName = DAYS_OF_WEEK[currentDate.getDay()];
+        let isStartDayScheduled = false;
+        
+        // Check if start date is scheduled
+        const startDayMatches = [
+          startDayName, // Full day name (e.g., "Monday")
+          startDayName.substring(0, 3), // Abbreviated day (e.g., "Mon")
+          startDayName.toLowerCase(),
+          startDayName.substring(0, 3).toLowerCase(),
+          currentDate.getDay().toString(), // Numeric day (0-6 where 0 is Sunday)
+          (currentDate.getDay() === 0 ? 7 : currentDate.getDay()).toString() // Monday as 1, Sunday as 7
+        ];
+        isStartDayScheduled = startDayMatches.some(match => match in schedule);
+        
+        // If start date is not scheduled, find the next scheduled day
+        if (!isStartDayScheduled) {
+          while (!isStartDayScheduled) {
+            currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000); // Add one day
+            startDayName = DAYS_OF_WEEK[currentDate.getDay()];
+            
+            const nextDayMatches = [
+              startDayName, // Full day name (e.g., "Monday")
+              startDayName.substring(0, 3), // Abbreviated day (e.g., "Mon")
+              startDayName.toLowerCase(),
+              startDayName.substring(0, 3).toLowerCase(),
+              currentDate.getDay().toString(), // Numeric day (0-6 where 0 is Sunday)
+              (currentDate.getDay() === 0 ? 7 : currentDate.getDay()).toString() // Monday as 1, Sunday as 7
+            ];
+            isStartDayScheduled = nextDayMatches.some(match => match in schedule);
+          }
+        }
+        
+        // Now start counting from the first scheduled day
+        sessionsScheduled = 1; // Count the first scheduled day as the first session
+        
+        // Continue until we reach the required number of sessions
+        while (sessionsScheduled < totalSessions) {
+          // Move to next day
+          currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000); // Add one day in milliseconds
+          
+          // Check if this day is in the schedule
+          const dayName = DAYS_OF_WEEK[currentDate.getDay()];
+          // Check if this day is scheduled (comprehensive matching)
+          const dayMatches = [
+            dayName, // Full day name (e.g., "Monday")
+            dayName.substring(0, 3), // Abbreviated day (e.g., "Mon")
+            dayName.toLowerCase(),
+            dayName.substring(0, 3).toLowerCase(),
+            currentDate.getDay().toString(), // Numeric day (0-6 where 0 is Sunday)
+            (currentDate.getDay() === 0 ? 7 : currentDate.getDay()).toString() // Monday as 1, Sunday as 7
+          ];
+          
+          const isDayScheduled = dayMatches.some(match => match in schedule);
+          
+          if (isDayScheduled) {
+            sessionsScheduled++;
+          }
+        }
+        
+        return currentDate.toISOString().split('T')[0];
+      }
+    }
+    
+    // Fallback: if no schedule or schedule is empty, assume 1 session per day
+    const start = new Date(startDate);
+    const end = new Date(start);
+    end.setDate(start.getDate() + totalSessions);
+    
+    return end.toISOString().split('T')[0];
+  };
 
   // Fetch batch details
   const { data: batchData, isLoading: isLoadingBatchData } = useQuery({
@@ -72,6 +241,14 @@ export const BatchEdit: React.FC = () => {
       // Set basic fields
       setBatchStatus(batch.status || 'active');
       setSelectedCourseId(batch.courseId || null);
+      
+      // Set dates
+      const batchStartDate = batch.startDate.split('T')[0];
+      const batchEndDate = batch.endDate.split('T')[0];
+      setStartDate(batchStartDate);
+      setEndDate(batchEndDate);
+      setStartDateDisplay(formatDateInputToDDMMYYYY(batchStartDate));
+      setEndDateDisplay(formatDateInputToDDMMYYYY(batchEndDate));
       
       // Set schedule
       if (batch.schedule) {
@@ -126,6 +303,18 @@ export const BatchEdit: React.FC = () => {
       setIsLoadingBatch(false);
     }
   }, [batchData]);
+  
+  // Auto-calculate end date when selected software or schedule changes
+  useEffect(() => {
+    if (startDate && selectedSoftwares.length > 0) {
+      const calculatedEndDate = calculateEndDate(startDate, selectedSoftwares, daySchedules);
+      if (calculatedEndDate) {
+        // Only auto-calculate if the user hasn't manually changed the end date
+        setEndDate(calculatedEndDate);
+        setEndDateDisplay(formatDateInputToDDMMYYYY(calculatedEndDate));
+      }
+    }
+  }, [startDate, selectedSoftwares, daySchedules]);
 
   const updateBatchMutation = useMutation({
     mutationFn: async (data: UpdateBatchRequest) => batchAPI.updateBatch(batchId!, data),
@@ -199,15 +388,15 @@ export const BatchEdit: React.FC = () => {
     }
 
     // Get status - use state value as fallback if FormData doesn't have it
-    let statusValue = (formData.get('status') as string) || batchStatus;
+    const statusValue = (formData.get('status') as string) || batchStatus;
     const finalStatus = statusValue && statusValue.trim() ? statusValue.trim() : 'active';
 
     const data: UpdateBatchRequest = {
       title: (formData.get('title') as string)?.trim() || undefined,
       software: softwareValue.trim(),
       mode: (formData.get('mode') as string) || undefined,
-      startDate: (formData.get('startDate') as string) || undefined,
-      endDate: (formData.get('endDate') as string) || undefined,
+      startDate: startDate || (formData.get('startDate') as string) || undefined,
+      endDate: endDate || (formData.get('endDate') as string) || undefined,
       maxCapacity: formData.get('maxCapacity') ? parseInt(formData.get('maxCapacity') as string) : undefined,
       status: finalStatus,
       schedule: Object.keys(daySchedules).length > 0 ? 
@@ -260,12 +449,25 @@ export const BatchEdit: React.FC = () => {
         maxCapacity: 100,
         status: statusValue,
         facultyIds: tempFacultyIds,
+        schedule: Object.keys(daySchedules).length > 0 ? 
+          Object.fromEntries(
+            Object.entries(daySchedules).filter(([_, times]) => times.startTime && times.endTime)
+          ) : undefined,
       };
       
       const tempBatch = await batchAPI.createBatch(tempData);
       if (tempBatch.data.batch) {
-        const suggestions = await batchAPI.suggestCandidates(tempBatch.data.batch.id);
+        // Build includeStatuses array based on settings
+        const includeStatuses = [];
+        if (studentStatusSettings.includeActive) includeStatuses.push('active');
+        if (studentStatusSettings.includeActivePlus) includeStatuses.push('active plus');
+        if (studentStatusSettings.includeDropped) includeStatuses.push('dropped');
+        if (studentStatusSettings.includeDeactive) includeStatuses.push('deactive');
+        
+        const suggestions = await batchAPI.suggestCandidates(tempBatch.data.batch.id, includeStatuses);
         if (suggestions.data && suggestions.data.candidates) {
+          // Filter out students who have time conflicts or day mismatches
+          // Show all candidates but let the UI visually indicate status
           setSuggestedCandidates(suggestions.data.candidates);
           setShowSuggestions(true);
         } else {
@@ -304,7 +506,7 @@ export const BatchEdit: React.FC = () => {
   };
 
   const handleSelectSuggested = (candidate: SuggestedCandidate) => {
-    if (candidate.status === 'available' || candidate.status === 'fees_overdue' || candidate.status === 'pending_fees' || candidate.status === 'no_orientation') {
+    if (candidate.status === 'available' || candidate.status === 'fees_overdue' || candidate.status === 'pending_fees' || candidate.status === 'no_orientation' || candidate.status === 'time_conflict' || candidate.status === 'day_mismatch') {
       handleToggleStudent(candidate.studentId);
     }
   };
@@ -393,6 +595,10 @@ export const BatchEdit: React.FC = () => {
                   />
                 </div>
 
+                <div className="md:col-span-2">
+                  <StudentStatusSettings onSettingsChange={(settings) => setStudentStatusSettings(settings)} />
+                </div>
+                
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Course (Optional)
@@ -551,9 +757,20 @@ export const BatchEdit: React.FC = () => {
                     type="date"
                     name="startDate"
                     required
-                    defaultValue={batch.startDate.split('T')[0]}
+                    value={startDate}
                     onChange={(e) => {
-                      setStartDateDisplay(formatDateInputToDDMMYYYY(e.target.value));
+                      const newStartDate = e.target.value;
+                      setStartDate(newStartDate);
+                      setStartDateDisplay(formatDateInputToDDMMYYYY(newStartDate));
+                      
+                      // Auto-calculate end date when start date changes
+                      if (selectedSoftwares.length > 0) {
+                        const calculatedEndDate = calculateEndDate(newStartDate, selectedSoftwares, daySchedules);
+                        if (calculatedEndDate) {
+                          setEndDate(calculatedEndDate);
+                          setEndDateDisplay(formatDateInputToDDMMYYYY(calculatedEndDate));
+                        }
+                      }
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
@@ -570,15 +787,19 @@ export const BatchEdit: React.FC = () => {
                     type="date"
                     name="endDate"
                     required
-                    defaultValue={batch.endDate.split('T')[0]}
+                    value={endDate}
                     onChange={(e) => {
-                      setEndDateDisplay(formatDateInputToDDMMYYYY(e.target.value));
+                      // Allow manual override of end date
+                      const newEndDate = e.target.value;
+                      setEndDate(newEndDate);
+                      setEndDateDisplay(formatDateInputToDDMMYYYY(newEndDate));
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   />
                   {endDateDisplay && (
                     <p className="mt-1 text-sm text-gray-600">Selected: {endDateDisplay}</p>
                   )}
+                  <p className="mt-1 text-xs text-gray-500">Auto-calculated based on software sessions. You can manually override this date.</p>
                 </div>
 
                 <div>
@@ -610,6 +831,166 @@ export const BatchEdit: React.FC = () => {
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                </div>
+              </div> {/* Close grid container */}
+              {/* Schedule Section */}
+              <div className="pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Schedule (Optional)</h3>
+                <p className="text-sm text-gray-600 mb-4">Select days and set start/end times for each day</p>
+                
+                {/* Quick-select schedule buttons */}
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Select MWF (Monday, Wednesday, Friday)
+                      const mwfDays = ['Monday', 'Wednesday', 'Friday'];
+                      const newSchedules = { ...daySchedules };
+                      
+                      // Add MWF days, keep existing times if they exist
+                      mwfDays.forEach(day => {
+                        if (!newSchedules[day]) {
+                          newSchedules[day] = { startTime: '', endTime: '' };
+                        }
+                      });
+                      
+                      // Remove non-MWF days
+                      Object.keys(newSchedules).forEach(day => {
+                        if (!mwfDays.includes(day)) {
+                          delete newSchedules[day];
+                        }
+                      });
+                      
+                      setDaySchedules(newSchedules);
+                    }}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      Object.keys(daySchedules).length === 3 &&
+                      ['Monday', 'Wednesday', 'Friday'].every(day => daySchedules[day])
+                        ? 'bg-blue-600 text-white' // Selected state
+                        : 'bg-blue-100 text-blue-800 hover:bg-blue-200' // Default state
+                    }`}
+                  >
+                    MWF (Mon, Wed, Fri)
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Select TTS (Tuesday, Thursday, Saturday)
+                      const ttsDays = ['Tuesday', 'Thursday', 'Saturday'];
+                      const newSchedules = { ...daySchedules };
+                      
+                      // Add TTS days, keep existing times if they exist
+                      ttsDays.forEach(day => {
+                        if (!newSchedules[day]) {
+                          newSchedules[day] = { startTime: '', endTime: '' };
+                        }
+                      });
+                      
+                      // Remove non-TTS days
+                      Object.keys(newSchedules).forEach(day => {
+                        if (!ttsDays.includes(day)) {
+                          delete newSchedules[day];
+                        }
+                      });
+                      
+                      setDaySchedules(newSchedules);
+                    }}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      Object.keys(daySchedules).length === 3 &&
+                      ['Tuesday', 'Thursday', 'Saturday'].every(day => daySchedules[day])
+                        ? 'bg-purple-600 text-white' // Selected state
+                        : 'bg-purple-100 text-purple-800 hover:bg-purple-200' // Default state
+                    }`}
+                  >
+                    TTS (Tue, Thu, Sat)
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Custom schedule - allow user to select any days
+                      // For custom, we don't change the schedule, just allow manual selection
+                      // Clear the schedule to start fresh for custom selection
+                      setDaySchedules({});
+                    }}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      Object.keys(daySchedules).length > 0 &&
+                      !(['Monday', 'Wednesday', 'Friday'].every(day => daySchedules[day]) && Object.keys(daySchedules).length === 3) &&
+                      !(['Tuesday', 'Thursday', 'Saturday'].every(day => daySchedules[day]) && Object.keys(daySchedules).length === 3)
+                        ? 'bg-green-600 text-white' // Selected state for custom
+                        : 'bg-green-100 text-green-800 hover:bg-green-200' // Default state
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
+                
+                <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={applyToAll}
+                      onChange={(e) => setApplyToAll(e.target.checked)}
+                      className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                    />
+                    <span className="ml-2 text-sm font-medium text-gray-700">
+                      Apply same time to all selected days
+                    </span>
+                  </label>
+                  <p className="ml-6 mt-1 text-xs text-gray-600">
+                    When enabled, changing time on any day will update all selected days
+                  </p>
+                </div>
+                
+                <div className="space-y-4">
+                  {DAYS_OF_WEEK.map((day) => {
+                    const isSelected = !!daySchedules[day];
+                    const schedule = daySchedules[day] || { startTime: '', endTime: '' };
+                    
+                    return (
+                      <div key={day} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleDayToggle(day)}
+                              className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                            />
+                            <span className="ml-2 text-sm font-medium text-gray-700">{day}</span>
+                          </label>
+                        </div>
+                        
+                        {isSelected && (
+                          <div className="grid grid-cols-2 gap-4 mt-3 pl-6">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Start Time
+                              </label>
+                              <input
+                                type="time"
+                                value={schedule.startTime}
+                                onChange={(e) => handleTimeChange(day, 'startTime', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                End Time
+                              </label>
+                              <input
+                                type="time"
+                                value={schedule.endTime}
+                                onChange={(e) => handleTimeChange(day, 'endTime', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -700,6 +1081,10 @@ export const BatchEdit: React.FC = () => {
                                 ? 'bg-amber-50 border-amber-300 hover:bg-amber-100'
                                 : candidate.status === 'no_orientation'
                                 ? 'bg-orange-50 border-orange-300 hover:bg-orange-100'
+                                : candidate.status === 'time_conflict'
+                                ? 'bg-red-50 border-red-300 hover:bg-red-100'
+                                : candidate.status === 'day_mismatch'
+                                ? 'bg-red-50 border-red-300 hover:bg-red-100'
                                 : 'bg-gray-50 border-gray-300 opacity-50'
                             }`}
                             onClick={() => handleSelectSuggested(candidate)}
@@ -721,6 +1106,8 @@ export const BatchEdit: React.FC = () => {
                                     ? 'bg-amber-200 text-amber-800'
                                     : candidate.status === 'no_orientation'
                                     ? 'bg-orange-200 text-orange-800'
+                                    : candidate.status === 'time_conflict'
+                                    ? 'bg-red-200 text-red-800'
                                     : 'bg-gray-200 text-gray-800'
                                 }`}>
                                   {candidate.statusMessage || candidate.status}
@@ -745,7 +1132,7 @@ export const BatchEdit: React.FC = () => {
                                   type="checkbox"
                                   checked={selectedStudents.includes(candidate.studentId)}
                                   onChange={() => handleToggleStudent(candidate.studentId)}
-                                  disabled={candidate.status === 'busy'}
+                                  disabled={candidate.status === 'busy' || candidate.status === 'time_conflict' || candidate.status === 'day_mismatch'}
                                   className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
                                   onClick={(e) => e.stopPropagation()}
                                 />
@@ -835,79 +1222,6 @@ export const BatchEdit: React.FC = () => {
                       )}
                     </p>
                   )}
-                </div>
-              </div>
-
-              {/* Schedule Section */}
-              <div className="pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Schedule (Optional)</h3>
-                <p className="text-sm text-gray-600 mb-4">Select days and set start/end times for each day</p>
-                
-                <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={applyToAll}
-                      onChange={(e) => setApplyToAll(e.target.checked)}
-                      className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                    />
-                    <span className="ml-2 text-sm font-medium text-gray-700">
-                      Apply same time to all selected days
-                    </span>
-                  </label>
-                  <p className="ml-6 mt-1 text-xs text-gray-600">
-                    When enabled, changing time on any day will update all selected days
-                  </p>
-                </div>
-                
-                <div className="space-y-4">
-                  {DAYS_OF_WEEK.map((day) => {
-                    const isSelected = !!daySchedules[day];
-                    const schedule = daySchedules[day] || { startTime: '', endTime: '' };
-                    
-                    return (
-                      <div key={day} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <label className="flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleDayToggle(day)}
-                              className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                            />
-                            <span className="ml-2 text-sm font-medium text-gray-700">{day}</span>
-                          </label>
-                        </div>
-                        
-                        {isSelected && (
-                          <div className="grid grid-cols-2 gap-4 mt-3 pl-6">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Start Time
-                              </label>
-                              <input
-                                type="time"
-                                value={schedule.startTime}
-                                onChange={(e) => handleTimeChange(day, 'startTime', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">
-                                End Time
-                              </label>
-                              <input
-                                type="time"
-                                value={schedule.endTime}
-                                onChange={(e) => handleTimeChange(day, 'endTime', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
 

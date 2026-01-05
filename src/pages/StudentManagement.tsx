@@ -40,6 +40,16 @@ const PaymentDetailCard: React.FC<{
         return 'bg-red-100 text-red-800';
       case 'cancelled':
         return 'bg-gray-100 text-gray-500';
+      case 'active':
+        return 'bg-green-100 text-green-800';
+      case 'active plus':
+        return 'bg-blue-100 text-blue-800';
+      case 'dropped':
+        return 'bg-red-100 text-red-800';
+      case 'finished':
+        return 'bg-purple-100 text-purple-800';
+      case 'deactive':
+        return 'bg-gray-100 text-gray-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -236,6 +246,24 @@ const PaymentDetailCard: React.FC<{
   );
 };
 
+// Utility function to get status color classes
+const getStatusColor = (status: string): string => {
+  switch (status?.toLowerCase()) {
+    case 'active':
+      return 'bg-green-100 text-green-800';
+    case 'active plus':
+      return 'bg-blue-100 text-blue-800';
+    case 'dropped':
+      return 'bg-red-100 text-red-800';
+    case 'finished':
+      return 'bg-purple-100 text-purple-800';
+    case 'deactive':
+      return 'bg-gray-100 text-gray-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
+
 export const StudentManagement: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -255,6 +283,7 @@ export const StudentManagement: React.FC = () => {
   const [uploadingBulk, setUploadingBulk] = useState(false);
   const [bulkUploadResult, setBulkUploadResult] = useState<{ success: number; failed: number; errors: any[] } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   
   // Store orientation status for all students
   const [orientationStatusMap, setOrientationStatusMap] = useState<Record<number, { isEligible: boolean; english: boolean; gujarati: boolean }>>({});
@@ -867,19 +896,31 @@ export const StudentManagement: React.FC = () => {
   const totalStudents = studentsData?.data.totalCount || allStudents.length;
   const batches = batchesData?.data || [];
 
-  // Filter students based on search query
+  // Filter students based on search query and status filter
   const students = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return allStudents;
+    let filtered = allStudents;
+    
+    // Apply search query filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((student: Student) => {
+        const name = (student.name || '').toLowerCase();
+        const email = (student.email || '').toLowerCase();
+        const phone = (student.phone || '').toLowerCase();
+        return name.includes(query) || email.includes(query) || phone.includes(query);
+      });
     }
-    const query = searchQuery.toLowerCase();
-    return allStudents.filter((student: Student) => {
-      const name = (student.name || '').toLowerCase();
-      const email = (student.email || '').toLowerCase();
-      const phone = (student.phone || '').toLowerCase();
-      return name.includes(query) || email.includes(query) || phone.includes(query);
-    });
-  }, [allStudents, searchQuery]);
+    
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((student: Student) => {
+        const studentStatus = student.studentProfile?.status?.toLowerCase();
+        return studentStatus === statusFilter.toLowerCase();
+      });
+    }
+    
+    return filtered;
+  }, [allStudents, searchQuery, statusFilter]);
 
   // Format date to dd/mm/yyyy
   const formatDateDDMMYYYY = (date: string | Date | null | undefined): string => {
@@ -1024,9 +1065,9 @@ export const StudentManagement: React.FC = () => {
               </div>
             ) : activeTab === 'students' ? (
               <>
-                {/* Search Bar */}
-                <div className="mb-4">
-                  <div className="relative max-w-md">
+                {/* Search and Filter Bar */}
+                <div className="mb-4 flex flex-col sm:flex-row gap-4">
+                  <div className="relative max-w-md flex-1">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1050,13 +1091,30 @@ export const StudentManagement: React.FC = () => {
                       </button>
                     )}
                   </div>
-                  {searchQuery && (
-                    <p className="mt-2 text-sm text-gray-600">
-                      Showing {students.length} of {allStudents.length} students
-                    </p>
-                  )}
+                  
+                  {/* Status Filter */}
+                  <div className="w-full sm:w-48">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="active">Active</option>
+                      <option value="active plus">Active Plus</option>
+                      <option value="dropped">Dropped</option>
+                      <option value="finished">Finished</option>
+                      <option value="deactive">Deactive</option>
+                    </select>
+                  </div>
                 </div>
-
+                
+                {searchQuery || statusFilter !== 'all' ? (
+                  <p className="mt-2 text-sm text-gray-600">
+                    Showing {students.length} of {allStudents.length} students
+                  </p>
+                ) : null}
+                
                 <div className="overflow-x-auto -mx-4 sm:mx-0">
                   <div className="inline-block min-w-full align-middle sm:px-0">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -1204,8 +1262,14 @@ export const StudentManagement: React.FC = () => {
                                 <span className={`px-2 py-1 rounded font-semibold ${
                                   studentProfile?.status?.toLowerCase() === 'active'
                                     ? 'bg-green-100 text-green-800'
-                                    : studentProfile?.status?.toLowerCase() === 'inactive'
+                                    : studentProfile?.status?.toLowerCase() === 'active plus'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : studentProfile?.status?.toLowerCase() === 'dropped'
                                     ? 'bg-red-100 text-red-800'
+                                    : studentProfile?.status?.toLowerCase() === 'finished'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : studentProfile?.status?.toLowerCase() === 'deactive'
+                                    ? 'bg-gray-100 text-gray-800'
                                     : 'bg-gray-100 text-gray-800'
                                 }`}>
                                   {studentProfile?.status || '-'}
@@ -1639,10 +1703,19 @@ export const StudentManagement: React.FC = () => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700">Status</label>
                           <p className="mt-1">
-                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                              (userData?.isActive ?? true) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                            }`}>
-                              {(userData?.isActive ?? true) ? 'Active' : 'Inactive'}
+                            <span className={'px-2 py-1 rounded text-xs font-semibold ' + (
+                              (() => {
+                                const status = userData?.studentProfile?.status || (userData?.isActive ? 'Active' : 'Inactive');
+                                const lowerStatus = status.toLowerCase();
+                                
+                                if (lowerStatus === 'active') return 'bg-green-100 text-green-800';
+                                else if (lowerStatus === 'active plus') return 'bg-blue-100 text-blue-800';
+                                else if (lowerStatus === 'dropped') return 'bg-red-100 text-red-800';
+                                else if (lowerStatus === 'finished') return 'bg-purple-100 text-purple-800';
+                                else if (lowerStatus === 'deactive') return 'bg-gray-100 text-gray-800';
+                                else return 'bg-red-100 text-red-800';
+                              })())}>
+                              {(userData?.studentProfile?.status || (userData?.isActive ? 'Active' : 'Inactive'))}
                             </span>
                           </p>
                         </div>
@@ -1752,13 +1825,7 @@ export const StudentManagement: React.FC = () => {
                                 <label className="block text-sm font-medium text-gray-700">Profile Status</label>
                                 <p className="mt-1">
                                   {studentProfile?.status ? (
-                                    <span className={`px-2 py-1 rounded text-xs font-semibold capitalize ${
-                                      studentProfile.status === 'active' 
-                                        ? 'bg-green-100 text-green-800' 
-                                        : studentProfile.status === 'completed'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-gray-100 text-gray-800'
-                                    }`}>
+                                    <span className={"px-2 py-1 rounded text-xs font-semibold capitalize " + getStatusColor(studentProfile.status)}>
                                       {studentProfile.status}
                                     </span>
                                   ) : (
@@ -1881,7 +1948,7 @@ export const StudentManagement: React.FC = () => {
                                 <label className="block text-sm font-medium text-gray-700">Total Deal</label>
                                 <p className="mt-1 text-sm text-gray-900">
                                   {enrollmentMetadata?.totalDeal !== undefined && enrollmentMetadata?.totalDeal !== null 
-                                    ? `₹${Number(enrollmentMetadata.totalDeal).toFixed(2)}` 
+                                    ? '₹' + Number(enrollmentMetadata.totalDeal).toFixed(2)
                                     : '-'}
                                 </p>
                               </div>
@@ -1889,7 +1956,7 @@ export const StudentManagement: React.FC = () => {
                                 <label className="block text-sm font-medium text-gray-700">Booking Amount</label>
                                 <p className="mt-1 text-sm text-gray-900">
                                   {enrollmentMetadata?.bookingAmount !== undefined && enrollmentMetadata?.bookingAmount !== null 
-                                    ? `₹${Number(enrollmentMetadata.bookingAmount).toFixed(2)}` 
+                                    ? '₹' + Number(enrollmentMetadata.bookingAmount).toFixed(2)
                                     : '-'}
                                 </p>
                               </div>
@@ -1897,18 +1964,14 @@ export const StudentManagement: React.FC = () => {
                                 <label className="block text-sm font-medium text-gray-700">Balance Amount</label>
                                 <p className="mt-1 text-sm text-gray-900">
                                   {enrollmentMetadata?.balanceAmount !== undefined && enrollmentMetadata?.balanceAmount !== null 
-                                    ? `₹${Number(enrollmentMetadata.balanceAmount).toFixed(2)}` 
+                                    ? '₹' + Number(enrollmentMetadata.balanceAmount).toFixed(2)
                                     : '-'}
                                 </p>
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700">EMI Plan</label>
                                 <p className="mt-1">
-                                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                    enrollmentMetadata?.emiPlan 
-                                      ? 'bg-green-100 text-green-800' 
-                                      : 'bg-gray-100 text-gray-800'
-                                  }`}>
+                                  <span className={'px-2 py-1 rounded text-xs font-semibold ' + (enrollmentMetadata?.emiPlan ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800')}>
                                     {enrollmentMetadata?.emiPlan ? 'Yes' : 'No'}
                                   </span>
                                 </p>
@@ -1964,11 +2027,7 @@ export const StudentManagement: React.FC = () => {
                               <div>
                                 <label className="block text-sm font-medium text-gray-700">Has Reference</label>
                                 <p className="mt-1">
-                                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                    enrollmentMetadata?.hasReference 
-                                      ? 'bg-green-100 text-green-800' 
-                                      : 'bg-gray-100 text-gray-800'
-                                  }`}>
+                                  <span className={'px-2 py-1 rounded text-xs font-semibold ' + (enrollmentMetadata?.hasReference ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800')}>
                                     {enrollmentMetadata?.hasReference ? 'Yes' : 'No'}
                                   </span>
                                 </p>
@@ -2066,7 +2125,7 @@ export const StudentManagement: React.FC = () => {
                                   const response = await fetch(fullUrl, {
                                     method: 'GET',
                                     headers: {
-                                      'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                      'Authorization': 'Bearer ' + (localStorage.getItem('token') || ''),
                                     },
                                   });
                                   
@@ -2180,19 +2239,42 @@ export const StudentManagement: React.FC = () => {
                   {/* Payment Plan Information */}
                   {(() => {
                     const userData = (studentProfileData as any)?.data?.user || selectedStudent || null;
-                    const documents = userData?.studentProfile?.documents;
+                    // Parse documents and enrollmentMetadata using the same logic as profile section
+                    let documents = userData?.studentProfile?.documents;
                     let enrollmentMetadata: any = null;
                     
                     if (documents) {
                       if (typeof documents === 'string') {
                         try {
-                          const parsed = JSON.parse(documents);
-                          enrollmentMetadata = parsed?.enrollmentMetadata || null;
+                          documents = JSON.parse(documents);
                         } catch (e) {
                           console.error('Error parsing documents:', e);
+                          documents = null;
                         }
-                      } else if (typeof documents === 'object' && 'enrollmentMetadata' in documents) {
-                        enrollmentMetadata = (documents as any).enrollmentMetadata;
+                      }
+                      
+                      if (documents && typeof documents === 'object') {
+                        // Check for enrollmentMetadata structure - try multiple possible locations
+                        if ('enrollmentMetadata' in documents) {
+                          enrollmentMetadata = (documents as any).enrollmentMetadata;
+                        } else if (documents.totalDeal !== undefined || documents.bookingAmount !== undefined || documents.lumpSumPayment !== undefined) {
+                          // If enrollmentMetadata fields are at root level of documents
+                          enrollmentMetadata = documents;
+                        }
+                        
+                        // Also check if enrollment has paymentPlan data
+                        const enrollment = userData?.enrollments?.[0];
+                        if (enrollment?.paymentPlan && !enrollmentMetadata) {
+                          const paymentPlan = enrollment.paymentPlan;
+                          enrollmentMetadata = {
+                            totalDeal: paymentPlan.totalDeal,
+                            bookingAmount: paymentPlan.bookingAmount,
+                            balanceAmount: paymentPlan.balanceAmount,
+                            emiPlan: paymentPlan.emiPlan,
+                            emiPlanDate: paymentPlan.emiPlanDate,
+                            emiInstallments: paymentPlan.emiInstallments,
+                          };
+                        }
                       }
                     }
 
@@ -2202,6 +2284,11 @@ export const StudentManagement: React.FC = () => {
                       const balanceAmount = enrollmentMetadata.balanceAmount !== undefined 
                         ? enrollmentMetadata.balanceAmount 
                         : totalDeal - bookingAmount;
+                      
+                      // Check for lump sum payment
+                      const isLumpSumPayment = enrollmentMetadata.lumpSumPayment;
+                      const lumpSumPayments = enrollmentMetadata.lumpSumPayments || [];
+                      const nextPayDate = enrollmentMetadata.nextPayDate;
 
                       return (
                         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -2221,6 +2308,49 @@ export const StudentManagement: React.FC = () => {
                               <p className="text-xs text-gray-500 mt-1">Balance = Total Deal - Booking Amount</p>
                             </div>
                           </div>
+                          
+                          {/* Lump Sum Payment Information */}
+                          {isLumpSumPayment && (
+                            <div className="mt-4 pt-4 border-t border-blue-200">
+                              <h5 className="text-sm font-semibold text-gray-900 mb-2">Lump Sum Payment Details</h5>
+                              <div className="flex flex-wrap gap-4">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Payment Type</label>
+                                  <p className="text-sm font-semibold text-green-600">Lump Sum Payment</p>
+                                </div>
+                                {nextPayDate && (
+                                  <div>
+                                    <label className="block text-xs text-gray-600 mb-1">Next Payment Date</label>
+                                    <p className="text-sm font-semibold text-gray-900">{formatDateDDMMYYYY(nextPayDate)}</p>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {lumpSumPayments.length > 0 && (
+                                <div className="mt-3">
+                                  <label className="block text-xs text-gray-600 mb-2">Lump Sum Payment Schedule</label>
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200 border border-gray-300">
+                                      <thead className="bg-gray-50">
+                                        <tr>
+                                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Date</th>
+                                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Amount (₹)</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="bg-white divide-y divide-gray-200">
+                                        {lumpSumPayments.map((payment: any, index: number) => (
+                                          <tr key={index}>
+                                            <td className="px-3 py-2 text-sm text-gray-900">{formatDateDDMMYYYY(payment.date)}</td>
+                                            <td className="px-3 py-2 text-sm text-gray-900">₹{Number(payment.amount).toFixed(2)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     }
@@ -2274,6 +2404,48 @@ export const StudentManagement: React.FC = () => {
                             ? Math.max(0, totalDeal - bookingAmount - totalPaid)
                             : null);
                         
+                        // Check for lump sum payment from enrollment metadata using same logic as profile section
+                        const userData = (studentProfileData as any)?.data?.user || selectedStudent || null;
+                        let documents = userData?.studentProfile?.documents;
+                        let enrollmentMetadata: any = null;
+                        
+                        if (documents) {
+                          if (typeof documents === 'string') {
+                            try {
+                              documents = JSON.parse(documents);
+                            } catch (e) {
+                              console.error('Error parsing documents:', e);
+                              documents = null;
+                            }
+                          }
+                          
+                          if (documents && typeof documents === 'object') {
+                            // Check for enrollmentMetadata structure - try multiple possible locations
+                            if ('enrollmentMetadata' in documents) {
+                              enrollmentMetadata = (documents as any).enrollmentMetadata;
+                            } else if (documents.totalDeal !== undefined || documents.bookingAmount !== undefined || documents.lumpSumPayment !== undefined) {
+                              // If enrollmentMetadata fields are at root level of documents
+                              enrollmentMetadata = documents;
+                            }
+                            
+                            // Also check if enrollment has paymentPlan data
+                            const enrollment = userData?.enrollments?.[0];
+                            if (enrollment?.paymentPlan && !enrollmentMetadata) {
+                              const paymentPlan = enrollment.paymentPlan;
+                              enrollmentMetadata = {
+                                totalDeal: paymentPlan.totalDeal,
+                                bookingAmount: paymentPlan.bookingAmount,
+                                balanceAmount: paymentPlan.balanceAmount,
+                                emiPlan: paymentPlan.emiPlan,
+                                emiPlanDate: paymentPlan.emiPlanDate,
+                                emiInstallments: paymentPlan.emiInstallments,
+                              };
+                            }
+                          }
+                        }
+                        
+                        const isLumpSumPayment = enrollmentMetadata?.lumpSumPayment;
+                        
                         return (
                           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-lg">
                             {totalDeal !== null && totalDeal !== undefined && (
@@ -2310,11 +2482,18 @@ export const StudentManagement: React.FC = () => {
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1">
                                   {totalDeal !== null && bookingAmount > 0 
-                                    ? `Total Deal: ₹${totalDeal.toFixed(2)} | Booking: ₹${bookingAmount.toFixed(2)} | Paid: ₹${totalPaid.toFixed(2)}`
+                                    ? 'Total Deal: ₹' + totalDeal.toFixed(2) + ' | Booking: ₹' + bookingAmount.toFixed(2) + ' | Paid: ₹' + totalPaid.toFixed(2)
                                     : totalDeal !== null
-                                    ? `Total Deal: ₹${totalDeal.toFixed(2)} | Paid: ₹${totalPaid.toFixed(2)}`
+                                    ? 'Total Deal: ₹' + totalDeal.toFixed(2) + ' | Paid: ₹' + totalPaid.toFixed(2)
                                     : ''}
                                 </p>
+                              </div>
+                            )}
+                            {isLumpSumPayment && (
+                              <div className="md:col-span-5">
+                                <div className="mt-2 p-2 bg-green-100 border border-green-300 rounded">
+                                  <p className="text-sm font-semibold text-green-800">Payment Type: Lump Sum Payment</p>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -2339,6 +2518,99 @@ export const StudentManagement: React.FC = () => {
                           );
                         })}
                       </div>
+                      
+                      {/* Additional Lump Sum Payment Information from Enrollment Metadata */}
+                      {(() => {
+                        const userData = (studentProfileData as any)?.data?.user || selectedStudent || null;
+                        let documents = userData?.studentProfile?.documents;
+                        let enrollmentMetadata: any = null;
+                        
+                        if (documents) {
+                          if (typeof documents === 'string') {
+                            try {
+                              documents = JSON.parse(documents);
+                            } catch (e) {
+                              console.error('Error parsing documents:', e);
+                              documents = null;
+                            }
+                          }
+                          
+                          if (documents && typeof documents === 'object') {
+                            // Check for enrollmentMetadata structure - try multiple possible locations
+                            if ('enrollmentMetadata' in documents) {
+                              enrollmentMetadata = (documents as any).enrollmentMetadata;
+                            } else if (documents.totalDeal !== undefined || documents.bookingAmount !== undefined || documents.lumpSumPayment !== undefined) {
+                              // If enrollmentMetadata fields are at root level of documents
+                              enrollmentMetadata = documents;
+                            }
+                            
+                            // Also check if enrollment has paymentPlan data
+                            const enrollment = userData?.enrollments?.[0];
+                            if (enrollment?.paymentPlan && !enrollmentMetadata) {
+                              const paymentPlan = enrollment.paymentPlan;
+                              enrollmentMetadata = {
+                                totalDeal: paymentPlan.totalDeal,
+                                bookingAmount: paymentPlan.bookingAmount,
+                                balanceAmount: paymentPlan.balanceAmount,
+                                emiPlan: paymentPlan.emiPlan,
+                                emiPlanDate: paymentPlan.emiPlanDate,
+                                emiInstallments: paymentPlan.emiInstallments,
+                              };
+                            }
+                          }
+                        }
+                        
+                        const isLumpSumPayment = enrollmentMetadata?.lumpSumPayment;
+                        const lumpSumPayments = enrollmentMetadata?.lumpSumPayments || [];
+                        
+                        // Check if payment transactions already show lump sum payments
+                        const hasLumpSumInTransactions = paymentsData.data.payments.some((p: PaymentTransaction) => p.notes && p.notes.toLowerCase().includes('lump sum'));
+                        
+                        if (isLumpSumPayment && !hasLumpSumInTransactions && lumpSumPayments.length > 0) {
+                          return (
+                            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                              <h4 className="text-sm font-semibold text-gray-900 mb-3">Additional Lump Sum Payment Information</h4>
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200 border border-gray-300">
+                                  <thead className="bg-gray-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Date</th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Amount (₹)</th>
+                                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="bg-white divide-y divide-gray-200">
+                                    {lumpSumPayments.map((payment: any, index: number) => {
+                                      // Check if this payment exists in the payment transactions
+                                      const paymentExists = paymentsData.data.payments.some((p: PaymentTransaction) => 
+                                        p.dueDate === payment.date || 
+                                        (p.notes && p.notes.includes(payment.date)) ||
+                                        Math.abs(Number(p.amount) - Number(payment.amount)) < 0.01 // Compare amounts
+                                      );
+                                      
+                                      return (
+                                        <tr key={index} className={!paymentExists ? 'bg-yellow-100' : ''}>
+                                          <td className="px-3 py-2 text-sm text-gray-900">{formatDateDDMMYYYY(payment.date)}</td>
+                                          <td className="px-3 py-2 text-sm text-gray-900">₹{Number(payment.amount).toFixed(2)}</td>
+                                          <td className="px-3 py-2 text-sm">
+                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${paymentExists ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                              {paymentExists ? 'Recorded' : 'Expected'}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p className="mt-2 text-xs text-gray-600">
+                                Note: These are expected lump sum payments that may not be recorded as individual transactions yet.
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Payment Notes */}
                       {paymentsData.data.payments.some((p: PaymentTransaction) => p.notes) && (
@@ -2394,12 +2666,12 @@ export const StudentManagement: React.FC = () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {allSoftwareWithProgress.map((progress: StudentSoftwareProgress, index: number) => (
-                            <tr key={progress.id || `software-${index}`} className="hover:bg-gray-50">
+                            <tr key={progress.id || 'software-' + index} className="hover:bg-gray-50">
                               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {progress.softwareName}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
-                                <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                <span className={'px-2 py-1 rounded text-xs font-semibold ' + (
                                   progress.status === 'Finished'
                                     ? 'bg-green-100 text-green-800'
                                     : progress.status === 'IP'
@@ -2407,7 +2679,7 @@ export const StudentManagement: React.FC = () => {
                                     : progress.status === 'NO'
                                     ? 'bg-gray-100 text-gray-800'
                                     : 'bg-yellow-100 text-yellow-800'
-                                }`}>
+                                )}>
                                   {progress.status === 'Finished' ? 'Completed' : progress.status === 'IP' ? 'In Progress' : progress.status === 'NO' ? 'Not Applicable' : 'Not Started'}
                                 </span>
                               </td>
@@ -2415,7 +2687,7 @@ export const StudentManagement: React.FC = () => {
                                 {progress.courseName || '-'}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                {progress.batch?.title || progress.batchId ? `Batch ${progress.batchId}` : '-'}
+                                {progress.batch?.title || progress.batchId ? 'Batch ' + (progress.batchId || '') : '-'}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                                 {progress.batchStartDate ? formatDateDDMMYYYY(progress.batchStartDate) : '-'}
@@ -2523,11 +2795,11 @@ export const StudentManagement: React.FC = () => {
             
             {bulkUploadResult ? (
               <div className="mb-4">
-                <div className={`p-4 rounded-lg mb-4 ${
+                <div className={'p-4 rounded-lg mb-4 ' + (
                   bulkUploadResult.failed === 0 
                     ? 'bg-green-50 border border-green-200' 
                     : 'bg-yellow-50 border border-yellow-200'
-                }`}>
+                )}>
                   <h3 className="font-semibold mb-2">
                     Import Results:
                   </h3>
@@ -2639,11 +2911,11 @@ export const StudentManagement: React.FC = () => {
               <div className="border-b border-gray-200 flex">
                 <button
                   onClick={() => setActiveOrientationTab('english')}
-                  className={`px-6 py-3 font-medium text-sm ${
+                  className={'px-6 py-3 font-medium text-sm ' + (
                     activeOrientationTab === 'english'
                       ? 'text-orange-600 border-b-2 border-orange-600'
                       : 'text-gray-600 hover:text-gray-900'
-                  }`}
+                  )}
                 >
                   English
                 </button>

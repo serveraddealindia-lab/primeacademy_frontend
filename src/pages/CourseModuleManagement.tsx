@@ -3,12 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { Layout } from '../components/Layout';
 import { courseAPI, Course } from '../api/course.api';
+import { ALL_SOFTWARES } from '../utils/softwareOptions';
 
-const SOFTWARE_OPTIONS = [
-  'Photoshop', 'Illustrator', 'Indesign', 'Corel Draw', 'Figma',
-  'Premiere', 'Audition', 'Aftereffects',
-  '3ds Max (AR)', 'V-ray', 'Sketchup', 'Lumion', 'Autocad',
-];
+const SOFTWARE_OPTIONS = ALL_SOFTWARES;
 
 export const CourseModuleManagement: React.FC = () => {
   const { user } = useAuth();

@@ -127,7 +127,7 @@ export const BatchCreate: React.FC = () => {
     }
 
     // Get status - use state value as fallback if FormData doesn't have it
-    let statusValue = (formData.get('status') as string) || batchStatus;
+    const statusValue = (formData.get('status') as string) || batchStatus;
     const finalStatus = statusValue && statusValue.trim() ? statusValue.trim() : 'active';
 
     const data: CreateBatchRequest = {
@@ -241,7 +241,7 @@ export const BatchCreate: React.FC = () => {
   };
 
   const handleSelectSuggested = (candidate: SuggestedCandidate) => {
-    if (candidate.status === 'available' || candidate.status === 'fees_overdue' || candidate.status === 'pending_fees' || candidate.status === 'no_orientation') {
+    if (candidate.status === 'available' || candidate.status === 'fees_overdue' || candidate.status === 'pending_fees' || candidate.status === 'no_orientation' || candidate.status === 'time_conflict' || candidate.status === 'day_mismatch') {
       handleToggleStudent(candidate.studentId);
     }
   };
@@ -618,6 +618,10 @@ export const BatchCreate: React.FC = () => {
                                 ? 'bg-amber-50 border-amber-300 hover:bg-amber-100'
                                 : candidate.status === 'no_orientation'
                                 ? 'bg-orange-50 border-orange-300 hover:bg-orange-100'
+                                : candidate.status === 'time_conflict'
+                                ? 'bg-red-50 border-red-300 hover:bg-red-100'
+                                : candidate.status === 'day_mismatch'
+                                ? 'bg-red-100 border-red-400 hover:bg-red-200'
                                 : 'bg-gray-50 border-gray-300 opacity-50'
                             }`}
                             onClick={() => handleSelectSuggested(candidate)}
@@ -639,6 +643,10 @@ export const BatchCreate: React.FC = () => {
                                     ? 'bg-amber-200 text-amber-800'
                                     : candidate.status === 'no_orientation'
                                     ? 'bg-orange-200 text-orange-800'
+                                    : candidate.status === 'time_conflict'
+                                    ? 'bg-red-200 text-red-800'
+                                    : candidate.status === 'day_mismatch'
+                                    ? 'bg-red-300 text-red-900 font-semibold'
                                     : 'bg-gray-200 text-gray-800'
                                 }`}>
                                   {candidate.statusMessage || candidate.status}
@@ -663,7 +671,7 @@ export const BatchCreate: React.FC = () => {
                                   type="checkbox"
                                   checked={selectedStudents.includes(candidate.studentId)}
                                   onChange={() => handleToggleStudent(candidate.studentId)}
-                                  disabled={candidate.status === 'busy'}
+                                  disabled={candidate.status === 'busy' || candidate.status === 'day_mismatch'}
                                   className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
                                   onClick={(e) => e.stopPropagation()}
                                 />

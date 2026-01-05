@@ -586,6 +586,40 @@ export const EmployeeEdit: React.FC = () => {
       return;
     }
     
+    try {
+      // Check if email already exists for a different user
+      if (email) {
+        const emailResponse = await api.get(`/users?email=${encodeURIComponent(email)}`);
+        if (emailResponse.data && Array.isArray(emailResponse.data) && emailResponse.data.length > 0) {
+          // Check if the email belongs to a different user (not the current one being edited)
+          const existingUser = emailResponse.data.find((user: any) => user.id !== Number(id));
+          if (existingUser) {
+            alert('A user with this email already exists. Please use a different email address.');
+            setErrors({ email: 'A user with this email already exists' });
+            return;
+          }
+        }
+      }
+      
+      // Check if phone already exists for a different user
+      if (phone) {
+        const phoneResponse = await api.get(`/users?phone=${encodeURIComponent(phone)}`);
+        if (phoneResponse.data && Array.isArray(phoneResponse.data) && phoneResponse.data.length > 0) {
+          // Check if the phone belongs to a different user (not the current one being edited)
+          const existingUser = phoneResponse.data.find((user: any) => user.id !== Number(id));
+          if (existingUser) {
+            alert('A user with this phone number already exists. Please use a different phone number.');
+            setErrors({ phone: 'A user with this phone number already exists' });
+            return;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking existing users:', error);
+      alert('Error checking existing users. Please try again.');
+      return;
+    }
+    
     const data: UpdateUserRequest = {
       name: name || undefined,
       email: email || undefined,

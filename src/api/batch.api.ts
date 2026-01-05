@@ -119,7 +119,7 @@ export interface SuggestedCandidate {
   name: string;
   email: string;
   phone?: string;
-  status: 'available' | 'busy' | 'fees_overdue' | 'pending_fees' | 'no_orientation';
+  status: 'available' | 'busy' | 'fees_overdue' | 'pending_fees' | 'no_orientation' | 'time_conflict' | 'day_mismatch';
   statusMessage: string;
   hasOverdueFees: boolean;
   hasPendingFees?: boolean;
@@ -137,9 +137,13 @@ export interface SuggestCandidatesResponse {
     totalCount: number;
     summary: {
       available: number;
+      dayMismatch: number;
       busy: number;
       pendingFees: number;
       feesOverdue: number;
+    };
+    settings?: {
+      includeStatuses: string[];
     };
   };
 }
@@ -165,8 +169,9 @@ export const batchAPI = {
     const response = await api.delete<{ status: string; message: string }>(`/batches/${id}`);
     return response.data;
   },
-  suggestCandidates: async (batchId: number): Promise<SuggestCandidatesResponse> => {
-    const response = await api.get<SuggestCandidatesResponse>(`/batches/${batchId}/candidates/suggest`);
+  suggestCandidates: async (batchId: number, includeStatuses?: string[]): Promise<SuggestCandidatesResponse> => {
+    const params = includeStatuses && includeStatuses.length > 0 ? { includeStatuses: includeStatuses.join(',') } : {};
+    const response = await api.get<SuggestCandidatesResponse>(`/batches/${batchId}/candidates/suggest`, { params });
     return response.data;
   },
   assignFaculty: async (batchId: number, facultyIds: number[]): Promise<{ status: string; message: string; data: any }> => {

@@ -8,10 +8,12 @@ export interface PaymentTransaction {
   paidAmount?: number;
   dueDate?: string;
   paidDate?: string;
-  status: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+  status: 'unpaid' | 'partial' | 'paid';
   receiptUrl?: string | null;
   paymentMethod?: string | null;
   transactionId?: string | null;
+  bankName?: string | null;
+  bankAccount?: string | null;
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -39,16 +41,20 @@ export interface CreatePaymentRequest {
   notes?: string;
   paymentMethod?: string;
   transactionId?: string;
+  bankName?: string;
+  bankAccount?: string;
 }
 
 export interface UpdatePaymentRequest {
-  status?: 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+  status?: 'unpaid' | 'partial' | 'paid';
   paidDate?: string;
   paymentMethod?: string;
   transactionId?: string;
   notes?: string;
   paidAmount?: number;
   receiptUrl?: string;
+  bankName?: string;
+  bankAccount?: string;
 }
 
 export interface PaymentsResponse {

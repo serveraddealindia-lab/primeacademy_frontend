@@ -147,7 +147,12 @@ export const PaymentManagement: React.FC = () => {
     onError: (error: any) => {
       const errorMessage = error.response?.data?.message || error.message || 'Failed to create payment';
       console.error('Payment creation error:', error);
-      alert(`Error: ${errorMessage}\n\nPlease check:\n1. All required fields are filled\n2. Database migrations are up to date\n3. Backend server logs for details`);
+      alert(`Error: ${errorMessage}
+
+Please check:
+1. All required fields are filled
+2. Database migrations are up to date
+3. Backend server logs for details`);
     },
   });
 
@@ -436,6 +441,8 @@ export const PaymentManagement: React.FC = () => {
     const dueDate = formData.get('dueDate') as string;
     const paymentMethod = formData.get('paymentMethod') as string | null;
     const transactionId = formData.get('transactionId') as string | null;
+    const bankName = formData.get('bankName') as string | null;
+    const bankAccount = formData.get('bankAccount') as string | null;
     
     // Validation
     if (!studentId || isNaN(studentId)) {
@@ -459,6 +466,8 @@ export const PaymentManagement: React.FC = () => {
       notes: formData.get('notes') as string || undefined,
       paymentMethod: paymentMethod || undefined,
       transactionId: transactionId || undefined,
+      bankName: bankName || undefined,
+      bankAccount: bankAccount || undefined,
     };
     
     console.log('Creating payment with data:', data);
@@ -536,7 +545,7 @@ export const PaymentManagement: React.FC = () => {
     const paidAmountValue = paidAmountInput && paidAmountInput.trim() !== ''
       ? parseFloat(paidAmountInput)
       : undefined;
-    const statusValue = formData.get('status') as 'pending' | 'partial' | 'paid' | 'overdue' | 'cancelled' || undefined;
+    const statusValue = formData.get('status') as 'unpaid' | 'partial' | 'paid' || undefined;
     
     // Auto-set status based on paidAmount if status is not explicitly set
     let finalStatus = statusValue;
@@ -579,6 +588,8 @@ export const PaymentManagement: React.FC = () => {
       paidDate: formData.get('paidDate') as string || undefined,
       paymentMethod: formData.get('paymentMethod') as string || undefined,
       transactionId: formData.get('transactionId') as string || undefined,
+      bankName: formData.get('bankName') as string || undefined,
+      bankAccount: formData.get('bankAccount') as string || undefined,
       notes: formData.get('notes') as string || undefined,
       paidAmount: finalPaidAmount,
     };
@@ -1123,11 +1134,9 @@ export const PaymentManagement: React.FC = () => {
                                             ? 'bg-green-100 text-green-800'
                                             : payment.status === 'partial'
                                             ? 'bg-blue-100 text-blue-800'
-                                            : payment.status === 'overdue'
-                                            ? 'bg-red-100 text-red-800'
-                                            : payment.status === 'cancelled'
-                                            ? 'bg-gray-100 text-gray-800'
-                                            : 'bg-yellow-100 text-yellow-800'
+                                            : payment.status === 'unpaid'
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : 'bg-gray-100 text-gray-800'
                                         }`}>
                                           {payment.status}
                                         </span>
@@ -1281,11 +1290,9 @@ export const PaymentManagement: React.FC = () => {
                                 ? 'bg-green-100 text-green-800'
                                 : payment.status === 'partial'
                                 ? 'bg-blue-100 text-blue-800'
-                                : payment.status === 'overdue'
-                                ? 'bg-red-100 text-red-800'
-                                : payment.status === 'cancelled'
-                                ? 'bg-gray-100 text-gray-800'
-                                : 'bg-yellow-100 text-yellow-800'
+                                : payment.status === 'unpaid'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-gray-100 text-gray-800'
                             }`}>
                               {payment.status}
                             </span>
@@ -1669,11 +1676,9 @@ export const PaymentManagement: React.FC = () => {
                   defaultValue={selectedPayment.status}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                 >
-                  <option value="pending">Pending</option>
+                  <option value="unpaid">Unpaid</option>
                   <option value="partial">Partial</option>
                   <option value="paid">Paid</option>
-                  <option value="overdue">Overdue</option>
-                  <option value="cancelled">Cancelled</option>
                 </select>
               </div>
               <div className="mb-4">

@@ -92,6 +92,7 @@ export interface CompleteEnrollmentRequest {
   phone: string;
   whatsappNumber?: string;
   dateOfAdmission: string;
+  dateOfBirth?: string;    // Add date of birth field
   
   // Address
   localAddress?: string;
@@ -118,7 +119,13 @@ export interface CompleteEnrollmentRequest {
     amount: number;
     dueDate?: string;
   }>;
-  
+  lumpSumPayment?: boolean;
+  nextPayDate?: string;
+  lumpSumPayments?: Array<{
+    date: string;
+    amount: number;
+  }>;
+
   // Additional Information
   complimentarySoftware?: string;
   complimentaryGift?: string;
@@ -129,6 +136,16 @@ export interface CompleteEnrollmentRequest {
   walkinDate?: string;
   masterFaculty?: string;
   enrollmentDocuments?: string[]; // Array of document URLs
+  
+  // Schedule Information
+  schedule?: Array<{
+    day: string;
+    startTime: string;
+    endTime: string;
+  }>;
+  totalDuration?: number | null;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface CompleteEnrollmentResponse {
@@ -218,6 +235,16 @@ export const studentAPI = {
 
   getCourseNames: async (): Promise<{ status: string; data: { courseNames: string[]; count: number } }> => {
     const response = await api.get('/students/course-names');
+    return response.data;
+  },
+
+  checkDuplicate: async (email?: string, phone?: string, excludeId?: number): Promise<{ status: string; data: { exists: boolean; type?: string; studentId?: number; studentName?: string } }> => {
+    const params: { email?: string; phone?: string; excludeId?: number } = {};
+    if (email) params.email = email;
+    if (phone) params.phone = phone;
+    if (excludeId) params.excludeId = excludeId;
+    
+    const response = await api.get('/students/check-duplicate', { params });
     return response.data;
   },
 };

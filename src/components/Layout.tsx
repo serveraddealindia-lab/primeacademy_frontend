@@ -48,6 +48,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Certificates', href: '/certificates', icon: '🎓', module: null }, // Only for admin/superadmin
     { name: 'Biometric Settings', href: '/biometric-settings', icon: '👆', module: null }, // Only for admin/superadmin
     { name: 'Photo Management', href: '/photos', icon: '📷', module: null }, // Only for admin/superadmin
+    { name: 'Settings', href: '/settings', icon: '⚙️', module: null }, // Settings for user preferences
   ];
 
   // Filter navigation based on user role permissions
