@@ -571,6 +571,7 @@ export const FacultyRegistration: React.FC = () => {
       return;
     }
     
+    // Final submission logic (only executed when on the last step)
     // Create FormData from state (which has all steps) and current form
     const currentFormData = new FormData(e.currentTarget);
     const combinedFormData = new FormData();
@@ -686,7 +687,7 @@ export const FacultyRegistration: React.FC = () => {
       employmentInfo,
       bankInfo,
       emergencyInfo,
-      documentsSubmitted: documentsSubmitted.length > 0 ? documentsSubmitted : undefined,
+      documents: documentsSubmitted.length > 0 ? documentsSubmitted : undefined,
     };
     
     const data: CreateFacultyRequest = {
